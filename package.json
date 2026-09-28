@@ -1,0 +1,19 @@
+{
+  "name": "gamify",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "mobile": "pnpm --filter mobile start",
+    "mobile:ios": "pnpm --filter mobile ios",
+    "mobile:android": "pnpm --filter mobile android",
+    "api": "uv --directory services/api run fastapi dev app/main.py",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:diff": "supabase db diff"
+  },
+  "devDependencies": {
+    "supabase": "^2.0.0"
+  }
+}

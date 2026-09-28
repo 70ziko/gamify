@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Expo / React Native
+.expo/
+apps/mobile/.expo/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+services/api/.venv/
+.python-version
+
+# Supabase
+supabase/.branches/
+supabase/.temp/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Build / IDE / OS
+.DS_Store
+*.log
+.idea/
+.vscode/
+coverage/
