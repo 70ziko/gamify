@@ -13,7 +13,8 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 export type ThemeMode = 'dark' | 'light';
 
@@ -92,8 +93,10 @@ export function ScreenFrame({
   mode,
   children,
   background,
-}: PropsWithChildren<{ mode: ThemeMode; background?: string }>) {
+  bottomColor,
+}: PropsWithChildren<{ mode: ThemeMode; background?: string; bottomColor?: string }>) {
   const p = palette[mode];
+  const insets = useSafeAreaInsets();
   return (
     <View style={[styles.viewport, { backgroundColor: p.bg }]}>
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
@@ -104,6 +107,8 @@ export function ScreenFrame({
           { backgroundColor: background ?? p.bg },
           Platform.OS === 'web' && styles.webSafeArea,
         ]}>
+        {/* Paints the home-indicator inset so a bottom sheet or footer that ends at the safe area reaches the screen edge. */}
+        {bottomColor ? <View style={[styles.bottomInset, { height: insets.bottom, backgroundColor: bottomColor }]} /> : null}
         {children}
       </SafeAreaView>
     </View>
@@ -302,23 +307,51 @@ export function Pill({
   );
 }
 
-export type MainTab = 'home' | 'explore' | 'create' | 'league' | 'profile';
+export type MainTab = 'home' | 'explore' | 'continue' | 'league' | 'profile';
 
-const tabGlyphs: Record<MainTab, string> = {
-  home: '⌂',
-  explore: '◉',
-  create: '★',
-  league: '♜',
-  profile: '♙',
-};
+type SideTab = Exclude<MainTab, 'continue'>;
 
-const tabLabels: Record<MainTab, string> = {
+const tabLabels: Record<SideTab, string> = {
   home: 'Home',
   explore: 'Explore',
-  create: 'Continue',
   league: 'League',
   profile: 'Profile',
 };
+
+// Tab icons are the design canvas's nav SVGs (Gamify App.dc.html). Active tabs get a tinted fill.
+function TabIcon({ tab, color, active }: { tab: SideTab; color: string; active: boolean }) {
+  const fill = active ? `${color}40` : 'none';
+  switch (tab) {
+    case 'home':
+      return (
+        <Svg width={22} height={22} viewBox="0 0 22 22" fill="none">
+          <Path d="M3 9.5L11 3L19 9.5V18A1.5 1.5 0 0 1 17.5 19.5H4.5A1.5 1.5 0 0 1 3 18Z" stroke={color} strokeWidth={2} strokeLinejoin="round" fill={fill} />
+        </Svg>
+      );
+    case 'explore':
+      return (
+        <Svg width={22} height={22} viewBox="0 0 22 22" fill="none">
+          <Circle cx={11} cy={11} r={8.5} stroke={color} strokeWidth={2} fill={fill} />
+          <Path d="M14.2 7.8L12.3 12.3L7.8 14.2L9.7 9.7Z" fill={color} />
+        </Svg>
+      );
+    case 'league':
+      return (
+        <Svg width={22} height={22} viewBox="0 0 22 22" fill="none">
+          <Path d="M5 4H17V9A6 6 0 0 1 5 9Z" stroke={color} strokeWidth={2} strokeLinejoin="round" fill={fill} />
+          <Path d="M8 19H14M11 15V19" stroke={color} strokeWidth={2} strokeLinecap="round" />
+          <Path d="M5 6H2.5A2.5 2.5 0 0 0 5 10M17 6H19.5A2.5 2.5 0 0 1 17 10" stroke={color} strokeWidth={1.8} />
+        </Svg>
+      );
+    case 'profile':
+      return (
+        <Svg width={22} height={22} viewBox="0 0 22 22" fill="none">
+          <Circle cx={11} cy={7.5} r={4} stroke={color} strokeWidth={2} fill={fill} />
+          <Path d="M3.5 19C4.4 15.4 7.4 13.5 11 13.5C14.6 13.5 17.6 15.4 18.5 19" stroke={color} strokeWidth={2} strokeLinecap="round" />
+        </Svg>
+      );
+  }
+}
 
 export function BottomNav({
   active,
@@ -329,31 +362,55 @@ export function BottomNav({
   p: Palette;
   onSelect: (tab: MainTab) => void;
 }) {
-  const tabs: MainTab[] = ['home', 'explore', 'create', 'league', 'profile'];
+  const insets = useSafeAreaInsets();
+  const tabs: MainTab[] = ['home', 'explore', 'continue', 'league', 'profile'];
   return (
-    <View style={[styles.nav, { backgroundColor: p.chrome, borderTopColor: p.border }]}>
+    <View style={[styles.nav, { backgroundColor: p.chrome, borderTopColor: p.border, paddingBottom: Math.max(insets.bottom - 8, 12) }]}>
       {tabs.map((tab) => {
         const selected = active === tab;
-        if (tab === 'create') {
+        if (tab === 'continue') {
           return (
-            <Pressable key={tab} onPress={() => onSelect(tab)} style={({ pressed }) => [styles.createTab, pressed && styles.pressed]}>
-              <LinearGradient colors={[p.accent, p.accentDeep]} style={[styles.createOrb, { borderColor: p.chrome }]}>
-                <GText weight={800} style={{ color: palette.dark.bg, fontSize: 31, lineHeight: 36 }}>
-                  ★
-                </GText>
-              </LinearGradient>
-              <GText weight={700} style={{ color: p.accent, fontSize: 9.5, marginTop: 1 }}>
+            <Pressable
+              key={tab}
+              accessibilityRole="button"
+              accessibilityLabel="Continue your roadmap"
+              onPress={() => onSelect(tab)}
+              style={({ pressed }) => [styles.continueTab, pressed && styles.pressed]}>
+              <View style={[styles.continueGlow, { boxShadow: `0 8px 22px ${p.accentDeep}66` }]}>
+                <LinearGradient
+                  colors={[p.accent, p.accentDeep]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.continueOrb, { borderColor: p.chrome }]}>
+                  <Svg width={30} height={30} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d="M12 2.6L14.85 9.05L21.9 9.75L16.6 14.45L18.15 21.4L12 17.7L5.85 21.4L7.4 14.45L2.1 9.75L9.15 9.05Z"
+                      fill={palette.dark.bg}
+                      stroke={palette.dark.bg}
+                      strokeWidth={2.6}
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </LinearGradient>
+              </View>
+              <GText weight={700} style={[styles.tabLabel, { color: p.accentDeep }]}>
                 Continue
               </GText>
             </Pressable>
           );
         }
+        const color = selected ? p.primary : p.dim;
         return (
-          <Pressable key={tab} onPress={() => onSelect(tab)} style={({ pressed }) => [styles.tab, pressed && styles.pressed]}>
-            <GText weight={700} style={{ color: selected ? p.primary : p.dim, fontSize: 24, lineHeight: 24 }}>
-              {tabGlyphs[tab]}
-            </GText>
-            <GText weight={700} style={{ color: selected ? p.primary : p.dim, fontSize: 9.5 }}>
+          <Pressable
+            key={tab}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            onPress={() => onSelect(tab)}
+            style={({ pressed }) => [styles.tab, pressed && styles.pressed]}>
+            <View style={[styles.tabIconPill, selected && { backgroundColor: `${p.primary}1F` }]}>
+              <TabIcon tab={tab} color={color} active={selected} />
+            </View>
+            <GText weight={700} style={[styles.tabLabel, { color }]}>
               {tabLabels[tab]}
             </GText>
           </Pressable>
@@ -448,6 +505,12 @@ const styles = StyleSheet.create({
     maxWidth: 480,
     overflow: 'hidden',
   },
+  bottomInset: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   webSafeArea: {
     paddingTop: 20,
   },
@@ -538,29 +601,42 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 86,
-    paddingHorizontal: 10,
-    paddingBottom: Platform.OS === 'web' ? 13 : 5,
+    paddingHorizontal: 8,
+    paddingTop: 8,
     borderTopWidth: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-around',
   },
   tab: {
-    width: 58,
-    height: 54,
+    width: 64,
+    alignItems: 'center',
+    gap: 3,
+  },
+  tabIconPill: {
+    width: 52,
+    height: 30,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
   },
-  createTab: {
+  tabLabel: {
+    fontSize: 10,
+    letterSpacing: 0.1,
+  },
+  continueTab: {
     width: 74,
     alignItems: 'center',
+    gap: 3,
+    marginTop: -34,
   },
-  createOrb: {
-    width: 68,
-    height: 68,
-    borderRadius: 23,
+  continueGlow: {
+    borderRadius: 22,
+  },
+  continueOrb: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
     borderWidth: 4,
     alignItems: 'center',
     justifyContent: 'center',
