@@ -17,6 +17,7 @@ import Svg, { Path, Rect } from 'react-native-svg';
 import {
   BackButton,
   Card,
+  GUTTER,
   GText,
   GradientCard,
   IconTile,
@@ -71,7 +72,7 @@ export function GamifyApp() {
     case 'commitment':
       return <CommitmentScreen onBack={() => setScreen('interests')} onContinue={() => setScreen('home')} />;
     case 'home':
-      return <HomeScreen mode={mode} onSelect={selectMain} onRoadmap={() => setScreen('roadmap')} onStreak={() => setScreen('streak')} />;
+      return <HomeScreen mode={mode} onSelect={selectMain} onRoadmap={() => setScreen('roadmap')} onStreak={() => setScreen('streak')} onCreateAi={() => setScreen('ai-prompt')} onCreateManual={() => setScreen('manual')} />;
     case 'roadmap':
       return <RoadmapScreen mode={mode} onSelect={selectMain} onBack={() => setScreen('home')} onStart={() => setScreen('step')} />;
     case 'step':
@@ -208,7 +209,7 @@ function CommitmentScreen({ onBack, onContinue }: { onBack: () => void; onContin
           <GText weight={800} style={[styles.screenTitle, { color: p.ink }]}>Set your daily pace</GText>
           <GText style={[styles.screenSubtitle, { color: p.muted }]}>This becomes your streak goal. Change it any time.</GText>
         </View>
-        <View style={{ gap: 10 }}>
+        <View style={{ gap: 8 }}>
           {paces.map(([minutes, name, description]) => {
             const picked = pace === name;
             return (
@@ -254,9 +255,10 @@ function CommitmentScreen({ onBack, onContinue }: { onBack: () => void; onContin
   );
 }
 
-function HomeScreen({ mode, onSelect, onRoadmap, onStreak }: { mode: ThemeMode; onSelect: (tab: MainTab) => void; onRoadmap: () => void; onStreak: () => void }) {
+function HomeScreen({ mode, onSelect, onRoadmap, onStreak, onCreateAi, onCreateManual }: { mode: ThemeMode; onSelect: (tab: MainTab) => void; onRoadmap: () => void; onStreak: () => void; onCreateAi: () => void; onCreateManual: () => void }) {
   const p = palette[mode];
   const [questDone, setQuestDone] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
   return (
     <MainScaffold mode={mode} active="home" onSelect={onSelect}>
       <View style={styles.homeHeader}>
@@ -308,7 +310,9 @@ function HomeScreen({ mode, onSelect, onRoadmap, onStreak }: { mode: ThemeMode; 
           <RoadmapMini p={p} title="Morning Routine" subtitle="Day 21 of 30" value={70} color={p.success} glyph="◷" onPress={onRoadmap} />
           <RoadmapMini p={p} title="Intro to Piano" subtitle="Unit 2 · 12 weeks" value={32} color={p.primary} glyph="▥" onPress={onRoadmap} />
         </View>
+        <AddRoadmapTile p={p} onPress={() => setCreateOpen(true)} />
       </View>
+      <CreateSheet mode={mode} visible={createOpen} onClose={() => setCreateOpen(false)} onAi={onCreateAi} onManual={onCreateManual} />
     </MainScaffold>
   );
 }
@@ -344,6 +348,15 @@ function RoadmapMini({ p, title, subtitle, value, color, glyph, onPress }: { p: 
       <GText weight={700} style={{ color: p.ink, fontSize: 13.2, marginTop: 10 }}>{title}</GText>
       <GText style={{ color: p.muted, fontSize: 11.2, marginTop: 3, marginBottom: 9 }}>{subtitle}</GText>
       <ProgressBar value={value} p={p} color={color} height={6} />
+    </Card>
+  );
+}
+
+function AddRoadmapTile({ p, onPress }: { p: Palette; onPress: () => void }) {
+  return (
+    <Card p={p} onPress={onPress} style={[styles.addRoadmapTile, { borderColor: p.borderStrong }]}>
+      <GText weight={800} style={{ color: p.primaryText, fontSize: 20, lineHeight: 22 }}>＋</GText>
+      <GText weight={700} style={{ color: p.primaryText, fontSize: 13.5 }}>Add roadmap</GText>
     </Card>
   );
 }
@@ -586,7 +599,7 @@ function StepScreen({ onClose, onComplete }: { onClose: () => void; onComplete: 
           <GText weight={800} style={{ color: p.ink, fontSize: 23, lineHeight: 30, letterSpacing: -0.4 }}>Which notes make a C major chord?</GText>
         </View>
         <KeyboardIllustration p={p} />
-        <View style={{ gap: 10 }}>
+        <View style={{ gap: 8 }}>
           {options.map((option, index) => {
             const number = index + 1;
             const picked = selected === number;
@@ -805,7 +818,7 @@ function AiGeneratingScreen({ onCancel, onFinished }: { onCancel: () => void; on
           <LinearGradient colors={[p.accent, p.accentDeep]} style={styles.generatingMark}><GText weight={800} style={{ color: p.bg, fontSize: 34 }}>★</GText></LinearGradient>
         </View>
         <View style={styles.centeredCopy}><GText weight={800} style={{ color: p.ink, fontSize: 23 }}>Drafting your path</GText><GText style={{ color: p.muted, fontSize: 13.5, marginTop: 8 }}>Usually about 15 seconds.</GText></View>
-        <View style={{ width: '100%', gap: 10 }}>
+        <View style={{ width: '100%', gap: 8 }}>
           <GenerationRow p={p} label="Understanding your goal" state="done" />
           <GenerationRow p={p} label="Shaping 6 units" state="done" />
           <GenerationRow p={p} label="Writing 25 steps" state="active" />
@@ -1116,40 +1129,41 @@ const styles = StyleSheet.create({
   centeredCopy: { alignItems: 'center' },
   display: { fontSize: 31, lineHeight: 36, letterSpacing: -0.9, textAlign: 'center' },
   heroDescription: { maxWidth: 310, fontSize: 14.5, lineHeight: 23, textAlign: 'center', marginTop: 16 },
-  welcomeFooter: { paddingHorizontal: 24, paddingBottom: 20, gap: 13 },
+  welcomeFooter: { paddingHorizontal: GUTTER, paddingBottom: 20, gap: 13 },
   dots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 5 },
   longDot: { width: 23, height: 6, borderRadius: 999 },
   dot: { width: 6, height: 6, borderRadius: 999 },
   textButton: { alignItems: 'center', justifyContent: 'center', minHeight: 38 },
-  onboardingHeader: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 24, paddingTop: 8, paddingBottom: 4 },
-  onboardingContent: { paddingHorizontal: 24, paddingTop: 20, gap: 18 },
+  onboardingHeader: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: 4 },
+  onboardingContent: { paddingHorizontal: GUTTER, paddingTop: 14, gap: 12 },
   headingBlock: { gap: 8 },
   screenTitle: { fontSize: 25, lineHeight: 31, letterSpacing: -0.65 },
   screenSubtitle: { fontSize: 14, lineHeight: 21 },
   pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   unsureCard: { padding: 15, flexDirection: 'row', alignItems: 'center', gap: 13 },
-  fixedFooter: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 22, paddingTop: 13, paddingBottom: Platform.OS === 'web' ? 20 : 10 },
+  fixedFooter: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: GUTTER, paddingTop: 13, paddingBottom: Platform.OS === 'web' ? 20 : 10 },
   paceCard: { padding: 14, flexDirection: 'row', alignItems: 'center', gap: 14 },
   minuteTile: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   radio: { width: 24, height: 24, borderRadius: 999, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  reminderCard: { padding: 16, gap: 14 },
+  reminderCard: { padding: 16, gap: 10 },
   segmentRow: { flexDirection: 'row', gap: 8 },
-  homeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 17 },
+  homeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   streakPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, height: 36, borderRadius: 999, borderWidth: 1 },
   avatarSmall: { width: 40, height: 40, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  levelCard: { borderWidth: 1, borderRadius: 25, padding: 17, marginBottom: 18 },
+  levelCard: { borderWidth: 1, borderRadius: 25, padding: 17, marginBottom: 12 },
   levelTop: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 12 },
   levelTile: { width: 41, height: 41, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   statsRow: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 13, marginTop: 14 },
   statDivider: { width: 1 },
-  sectionBlock: { gap: 10, marginBottom: 18 },
+  sectionBlock: { gap: 8, marginBottom: 12 },
   timerPill: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
   questRow: { borderRadius: 17, paddingHorizontal: 14, minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12 },
   checkbox: { width: 29, height: 29, borderRadius: 9, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  roadmapCards: { flexDirection: 'row', gap: 10 },
+  roadmapCards: { flexDirection: 'row', gap: 8 },
   roadmapMini: { flex: 1, padding: 14, borderRadius: 19 },
-  compactHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 8 },
-  roadmapProgress: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 8 },
+  addRoadmapTile: { minHeight: 54, borderRadius: 19, borderStyle: 'dashed', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  compactHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: GUTTER, paddingVertical: 8 },
+  roadmapProgress: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: GUTTER, paddingVertical: 8 },
   pathCanvas: { height: MAP_HEIGHT - MAP_TOP_CLIP, overflow: 'hidden' },
   pathMap: { position: 'absolute', top: -MAP_TOP_CLIP, left: '50%', marginLeft: -MAP_WIDTH / 2, width: MAP_WIDTH, height: MAP_HEIGHT },
   pathNode: { position: 'absolute', borderRadius: 999, borderWidth: 4, alignItems: 'center', justifyContent: 'center' },
@@ -1157,13 +1171,13 @@ const styles = StyleSheet.create({
   landmark: { position: 'absolute', alignItems: 'center', gap: 6 },
   landmarkDiamond: { borderWidth: 2, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '45deg' }] },
   landmarkLabel: { fontSize: 9.5, letterSpacing: 0.6 },
-  nextStepCard: { position: 'absolute', left: 20, right: 20, top: 334, borderRadius: 24, borderWidth: 1.5, padding: 16, boxShadow: '0 14px 34px rgba(0,0,0,0.45)' },
+  nextStepCard: { position: 'absolute', left: GUTTER, right: GUTTER, top: 334, borderRadius: 24, borderWidth: 1.5, padding: 16, boxShadow: '0 14px 34px rgba(0,0,0,0.45)' },
   nextStepTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   playButton: { width: 53, height: 53, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   upNext: { alignSelf: 'flex-start', fontSize: 9, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3, letterSpacing: 0.6 },
   stepMeta: { flexDirection: 'row', gap: 14, paddingVertical: 11, marginVertical: 12, borderTopWidth: 1, borderBottomWidth: 1 },
-  sessionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 21, paddingTop: 8, paddingBottom: 15 },
-  sessionBody: { paddingHorizontal: 22, gap: 20 },
+  sessionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: 15 },
+  sessionBody: { paddingHorizontal: GUTTER, gap: 14 },
   keyboardCard: { padding: 21, borderRadius: 22, alignItems: 'center' },
   keyboard: { width: 239, height: 94, flexDirection: 'row', position: 'relative' },
   whiteKey: { width: 34, height: 94, borderWidth: 1, borderRadius: 4, backgroundColor: '#F2ECF6' },
@@ -1171,13 +1185,13 @@ const styles = StyleSheet.create({
   keyDot: { position: 'absolute', top: 73, width: 16, height: 16, borderRadius: 999 },
   answerCard: { padding: 15, borderRadius: 17, flexDirection: 'row', alignItems: 'center', gap: 13 },
   answerNumber: { width: 27, height: 27, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  completeBody: { flex: 1, justifyContent: 'center', paddingHorizontal: 24, gap: 28 },
+  completeBody: { flex: 1, justifyContent: 'center', paddingHorizontal: GUTTER, gap: 20 },
   completeCheck: { width: 122, height: 122, borderRadius: 999, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', shadowColor: '#74C79C', shadowOpacity: 0.32, shadowRadius: 24 },
   completeStats: { flexDirection: 'row', gap: 9 },
   completeStat: { flex: 1, alignItems: 'center', paddingVertical: 18, borderRadius: 18 },
   completeLevel: { padding: 16, borderRadius: 20 },
   streakSecured: { flexDirection: 'row', gap: 7, paddingTop: 11, borderTopWidth: 1 },
-  streakBackdrop: { flex: 1, paddingHorizontal: 22, paddingTop: 10, gap: 18 },
+  streakBackdrop: { flex: 1, paddingHorizontal: GUTTER, paddingTop: 10, gap: 12 },
   skeletonLarge: { height: 145, borderRadius: 25 },
   skeletonSmall: { height: 58, borderRadius: 20 },
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },
@@ -1192,8 +1206,8 @@ const styles = StyleSheet.create({
   createOptions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   createOption: { flex: 1, padding: 15, minHeight: 135 },
   quickHabit: { marginTop: 12, padding: 13, flexDirection: 'row', gap: 11, alignItems: 'center' },
-  simpleHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 9 },
-  formBody: { paddingHorizontal: 20, paddingTop: 12, gap: 14 },
+  simpleHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: GUTTER, paddingVertical: 9 },
+  formBody: { paddingHorizontal: GUTTER, paddingTop: 12, gap: 10 },
   goalInput: { borderWidth: 1.5, borderRadius: 21, minHeight: 150, padding: 18, fontSize: 14, lineHeight: 22, textAlignVertical: 'top' },
   formGrid: { flexDirection: 'row', gap: 10 },
   smallField: { flex: 1, padding: 13, borderRadius: 16 },
@@ -1207,7 +1221,7 @@ const styles = StyleSheet.create({
   generationRow: { minHeight: 53, borderRadius: 16, borderWidth: 1, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 12 },
   generationState: { width: 25, height: 25, borderRadius: 999, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   cancelButton: { alignItems: 'center', paddingVertical: 18 },
-  reviewBody: { paddingHorizontal: 20, gap: 10 },
+  reviewBody: { paddingHorizontal: GUTTER, gap: 8 },
   summaryCard: { borderWidth: 1, borderRadius: 21, padding: 16 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 11 },
   tinyTag: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
@@ -1216,67 +1230,67 @@ const styles = StyleSheet.create({
   unitItem: { flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 11, padding: 9 },
   bullet: { width: 6, height: 6, borderRadius: 999 },
   addStep: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 11, padding: 9 },
-  reviewFooter: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: 1, flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 13, paddingBottom: Platform.OS === 'web' ? 20 : 10 },
+  reviewFooter: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: 1, flexDirection: 'row', gap: 10, paddingHorizontal: GUTTER, paddingTop: 13, paddingBottom: Platform.OS === 'web' ? 20 : 10 },
   manualTitleCard: { padding: 14, flexDirection: 'row', alignItems: 'center', gap: 13 },
   manualStep: { padding: 13, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 11 },
   addManualStep: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 15, padding: 13, alignItems: 'center' },
   publishCard: { padding: 13, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  aiCtaShadow: { borderRadius: 22, paddingBottom: 5, marginTop: 16 },
+  aiCtaShadow: { borderRadius: 22, paddingBottom: 5, marginTop: 12 },
   aiCta: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 22, paddingVertical: 18, paddingHorizontal: 16 },
   aiCtaIcon: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   aiCtaPlus: { width: 38, height: 38, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 15, height: 48, paddingHorizontal: 14, marginTop: 14 },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12, marginBottom: 15 },
-  featureCard: { borderRadius: 23, padding: 18, overflow: 'hidden', minHeight: 175, marginBottom: 18 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 15, height: 48, paddingHorizontal: 14, marginTop: 10 },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10, marginBottom: 10 },
+  featureCard: { borderRadius: 23, padding: 18, overflow: 'hidden', minHeight: 175, marginBottom: 12 },
   featureBubble: { position: 'absolute', width: 150, height: 150, borderRadius: 999, right: -34, bottom: -54, backgroundColor: 'rgba(244,169,140,.22)' },
   officialBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   featureTitle: { color: '#fff', fontSize: 20, lineHeight: 25, marginTop: 13, maxWidth: 290 },
   featureDescription: { color: '#DED2FB', fontSize: 12.5, lineHeight: 19, maxWidth: 275, marginTop: 5 },
   rankedCard: { minHeight: 68, borderRadius: 17, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
   quickHabitCard: { flex: 1, padding: 14, borderRadius: 17 },
-  courseHero: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 23, overflow: 'hidden' },
+  courseHero: { paddingHorizontal: GUTTER, paddingTop: 16, paddingBottom: 23, overflow: 'hidden' },
   featureBubbleLarge: { position: 'absolute', width: 170, height: 170, borderRadius: 999, right: -50, top: -25, backgroundColor: 'rgba(244,169,140,.18)' },
   courseStats: { flexDirection: 'row', gap: 16, alignItems: 'center', marginTop: 18 },
   courseStatDivider: { width: 1, height: 34, backgroundColor: 'rgba(255,255,255,.25)' },
-  courseBody: { padding: 20, gap: 17 },
+  courseBody: { paddingHorizontal: GUTTER, paddingVertical: 14, gap: 12 },
   courseUnits: { overflow: 'hidden', paddingHorizontal: 14 },
   courseUnit: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 57 },
   leaderboardCard: { padding: 15 },
   leaderboardRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 12 },
   personDot: { width: 28, height: 28, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  courseFooter: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: 1, flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 13, paddingBottom: Platform.OS === 'web' ? 20 : 10 },
-  leagueHero: { alignItems: 'center', marginTop: 4, marginBottom: 16 },
+  courseFooter: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: 1, flexDirection: 'row', gap: 10, paddingHorizontal: GUTTER, paddingTop: 13, paddingBottom: Platform.OS === 'web' ? 20 : 10 },
+  leagueHero: { alignItems: 'center', marginTop: 4, marginBottom: 12 },
   leagueArrows: { flexDirection: 'row', alignItems: 'center', gap: 28 },
   trophyBadge: { width: 78, height: 78, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
   leagueTabs: { flexDirection: 'row', borderRadius: 14, padding: 4 },
   leagueTabActive: { flex: 1, height: 35, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   playerRow: { paddingHorizontal: 14, minHeight: 58, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
   playerAvatar: { width: 35, height: 35, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  promotionLine: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 12 },
+  promotionLine: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 8 },
   promotionDash: { height: 1, flex: 1 },
   streakSheet: { borderTopWidth: 1, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 22, paddingBottom: 24, paddingTop: 16 },
   bigFlame: { fontSize: 63, textAlign: 'center', marginBottom: 12 },
-  weekRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginVertical: 18 },
+  weekRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginVertical: 12 },
   dayBox: { width: 31, height: 34, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  streakOption: { minHeight: 78, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 10 },
+  streakOption: { minHeight: 78, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 8 },
   useButton: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 11 },
   repairButton: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
-  profileIdentity: { flexDirection: 'row', alignItems: 'center', gap: 15, marginVertical: 20 },
+  profileIdentity: { flexDirection: 'row', alignItems: 'center', gap: 15, marginVertical: 14 },
   profileAvatar: { width: 78, height: 78, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   levelBubble: { position: 'absolute', right: -1, bottom: -1, width: 31, height: 24, borderRadius: 999, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
   profileStats: { flexDirection: 'row', gap: 9 },
   profileStat: { flex: 1, alignItems: 'center', paddingVertical: 17, borderRadius: 17 },
-  activityCard: { padding: 15, marginVertical: 17 },
+  activityCard: { padding: 15, marginVertical: 12 },
   heatmap: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 13 },
   heatCell: { width: 16, height: 16, borderRadius: 4 },
   achievementGrid: { flexDirection: 'row', gap: 9 },
   achievementMini: { flex: 1, minHeight: 120, alignItems: 'center', justifyContent: 'center', padding: 10 },
-  achievementsBody: { paddingHorizontal: 20, paddingTop: 6, gap: 18 },
+  achievementsBody: { paddingHorizontal: GUTTER, paddingTop: 6, gap: 12 },
   collectorCard: { padding: 15, flexDirection: 'row', alignItems: 'center', gap: 14 },
   collectorRing: { width: 52, height: 52, borderRadius: 999, borderWidth: 6, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-25deg' }] },
   achievementTile: { flex: 1, minHeight: 132, alignItems: 'center', justifyContent: 'center', padding: 8 },
   creatorBadge: { padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  settingsBody: { paddingHorizontal: 20, paddingTop: 8, gap: 20 },
+  settingsBody: { paddingHorizontal: GUTTER, paddingTop: 8, gap: 14 },
   themeChoices: { flexDirection: 'row', gap: 9, marginTop: -10 },
   themeChoice: { flex: 1, borderRadius: 17, padding: 10, alignItems: 'center', gap: 9 },
   themePreview: { height: 56, width: '100%', borderRadius: 11, borderWidth: 1, padding: 8, gap: 6 },

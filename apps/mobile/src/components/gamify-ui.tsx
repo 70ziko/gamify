@@ -71,6 +71,9 @@ export const palette = {
 
 export type Palette = (typeof palette)[ThemeMode];
 
+// Horizontal screen margin shared by every screen's content, headers and footers.
+export const GUTTER = 14;
+
 const fontFamilies = {
   400: 'JakartaRegular',
   500: 'JakartaMedium',
@@ -521,7 +524,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   mainContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: GUTTER,
     paddingTop: 14,
   },
   mainFlex: {
