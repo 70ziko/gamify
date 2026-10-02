@@ -9,15 +9,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## ARCHITECTURE.md is the target, not the current state
 
 - **Mobile is a UI prototype.** No Supabase client, no API calls, no persistence: every screen renders hardcoded data. Nativewind, Zustand, TanStack Query, and supabase-js are not installed yet. `@expo/ui` is installed but unused.
-- **Versions.** `apps/mobile/package.json` pins Expo SDK 57, React Native 0.86, React 19.2, and TypeScript ~6.0. The "SDK 56 / RN 0.85" in ARCHITECTURE.md is stale. SDK 57 may postdate your training data, so check https://docs.expo.dev/versions/v57.0.0/ before using Expo APIs.
-- **API.** Only `GET /health` and a stubbed `POST /goals/from-prompt` that returns canned data: no Claude call, no DB write, no JWT verification. Model IDs are `Settings.model_authoring` / `model_fast` in `services/api/app/config.py`.
-- **`@gamify/shared`** is not a dependency of any package yet, and nothing imports it. It ships raw TS (`main: src/index.ts`, no build step).
+- **Versions.** `apps/mobile/package.json` pins Expo SDK 57, React Native 0.86, React 19.2, and TypeScript ~6.0. SDK 57 may postdate your training data, so check https://docs.expo.dev/versions/v57.0.0/ before using Expo APIs.
+- **API is built; the app doesn't call it yet.** Leagues, follows, achievements, gems, and payments are not built.
+- **`@gamify/shared`** holds only the XP curve. Nothing imports it yet. It ships raw TS (`main: src/index.ts`, no build step). The app should take API types from `/openapi.json`.
 
 ## Commands beyond AGENTS.md
 
 - Type-check mobile: `pnpm --filter mobile exec tsc --noEmit`
 - Run mobile in a browser: `pnpm --filter mobile web`
-- No test runner exists in any package, so there is no single-test command yet.
+- API tests (from `services/api`): `uv run --env-file .env pytest`. One test: `uv run --env-file .env pytest tests/test_api.py::test_streak_freeze`. Tests marked `db` skip when Postgres on `DATABASE_URL` is unreachable, and each runs inside a rolled-back transaction.
+- The mobile app has no test runner.
 - Local Supabase: Studio at http://127.0.0.1:54323, captured auth emails at http://127.0.0.1:54324, API on `:54321`, Postgres on `:54322`.
 
 ## Mobile app
@@ -31,16 +32,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Expo template leftovers that the Gamify UI does not use: `src/app/explore.tsx` (still a live `/explore` route), `app-tabs*`, `themed-*`, `hint-row`, `web-badge`, `external-link`, `animated-icon*`, `ui/collapsible`, `hooks/use-theme.ts`, and `constants/theme.ts`. Despite what AGENTS.md says, `constants/theme.ts` is not the app palette. It is, however, the only importer of `src/global.css` (web background and font variables), so move that import before deleting it.
 - `app.json` enables the React Compiler and typed routes.
 
+## API service (`services/api/app`)
+
+- One package per domain: `profiles`, `progress`, `roadmaps`, `marketplace`, `ai`. Each has only the files it needs: `models.py` (SQLAlchemy, mapped onto the SQL schema), `schemas.py` (Pydantic I/O), `service.py` (logic), `router.py` (thin endpoints). Register new routers in `main.py`.
+- Dependencies point one way: `profiles ← progress ← roadmaps ← marketplace`, and `ai → roadmaps.schemas`. Cross-domain calls go through `service` functions.
+- Services take an `AsyncSession` and never commit. `db.Session` wraps each request in one transaction that commits before the response is sent (`Depends(..., scope="function")`). Raise `errors.NotFound` / `Forbidden` / `Conflict` / `QuotaExceeded`, not `HTTPException`.
+- Python-side column defaults (`default=uuid4`, `default=1`) apply only at flush. Set values explicitly when code reads them before flushing.
+- AI: a flow is `async def flow(data, ctx: FlowContext) -> BaseModel`. Call models through `ctx.ask(agent, prompt, ModelRole.X)`. Agents are declared without a model, so tests swap in `FunctionModel` with `agent.override(model=...)`. `tests/conftest.py` sets `ALLOW_MODEL_REQUESTS = False`.
+- Tests override `db.get_sessionmaker` with a savepoint-joined factory and `auth.current_user` with a fixed user (`act_as`). Background tasks share that factory.
+
 ## Data model invariants
 
-- `xp_events` is the ledger. XP totals, levels, and league ranks are derived from it and never stored. The stored exceptions are `streaks` (to be advanced by a pg_cron rollover) and the denormalized listing aggregates (`installs`, `rating_avg`, `rating_count`).
-- The level curve is `xpForLevel` / `levelFromXp` in `packages/shared/src/index.ts`. The API is Python and cannot import it, so mirror any change there by hand.
-- Installing a marketplace listing copies its `listing_items` into the user's own `goals` / `activities` (with `goals.source_course_id` set). Private progress never touches the public template.
-- The TS types in `packages/shared` are hand-mirrored from `supabase/migrations/0001_init.sql`. Change both together, or switch to `supabase gen types typescript` as that file's header suggests.
+- `xp_events` is the ledger, written only by the API through `progress.service.award` with a per-user unique `idempotency_key`. XP totals, levels, step completion, quest progress, and leaderboards are derived from it and never stored. The stored exceptions are `streaks` (advanced on completion, evaluated lazily) and the listing aggregates (`installs`, `rating_avg`, `rating_count`).
+- Step XP comes from `progress.xp.step_xp(minutes)`. `StepDraft.xp` is a computed field, so client- or AI-supplied XP is ignored.
+- The level curve is `xpForLevel` / `levelFromXp` in `packages/shared/src/index.ts`, mirrored by hand in `app/progress/levels.py`.
+- Installing a listing materializes its latest `listing_versions.content` (a `RoadmapDraft`) into the user's own roadmap with `source_listing_id` set. Private progress never touches the template.
+- The ORM models are hand-mapped onto `supabase/migrations/0001_init.sql`. Change both together.
 
 ## Gotchas
 
-- **Missing grants.** `supabase/config.toml` leaves `auto_expose_new_tables` unset. Its inline comment says that new `public` tables are then not reachable by `anon`, `authenticated`, or `service_role` without explicit `GRANT`s, and that the legacy setting is removed on 2026-10-30. `0001_init.sql` has no grants, so expect permission errors from supabase-js / supabase-py until a migration adds them.
-- **Ledger immutability isn't enforced.** The `xp_events_owner` RLS policy is `for all`, so it lets an owner insert any amount and update or delete their rows. "Append-only" is a convention until a policy or trigger enforces it.
+- **No Data API access, on purpose.** `0001_init.sql` enables RLS with no policies and revokes all table privileges from `anon` / `authenticated`. supabase-js can only sign in. Data goes through the API, which connects as the table owner. Realtime for leagues will need explicit `select` grants and policies.
+- **Local signing key.** `supabase/config.toml` sets `signing_keys_path = "./signing_keys.json"`, which is gitignored and must exist before `pnpm db:start`. Create it with `echo '[]' > supabase/signing_keys.json && pnpm exec supabase gen signing-key --algorithm ES256 --yes`.
 - **Migration names.** `supabase migration new <name>` creates `<timestamp>_<name>.sql`, and `pnpm db:diff -f <name>` also writes a new migration file. Rename CLI-created files to the next `000N_` prefix to keep the numbered order. `config.toml` also seeds from `supabase/seed.sql`, which doesn't exist yet.
-- **API env loading.** `Settings` reads `.env` from the current working directory, and every field defaults to `""`. Started from any other directory, the API boots silently with empty keys. `pnpm api` is safe because it runs `uv --directory services/api`.
+- **API env loading.** `Settings` reads only the process environment. `pnpm api` loads `services/api/.env` through `uv run --env-file .env`. Run other commands the same way, or the defaults (local Supabase) apply and no AI key is set.

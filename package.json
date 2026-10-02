@@ -7,7 +7,7 @@
     "mobile": "pnpm --filter mobile start",
     "mobile:ios": "pnpm --filter mobile ios",
     "mobile:android": "pnpm --filter mobile android",
-    "api": "uv --directory services/api run fastapi dev app/main.py",
+    "api": "uv --directory services/api run --env-file .env fastapi dev app/main.py",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",

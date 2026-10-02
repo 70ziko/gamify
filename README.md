@@ -10,7 +10,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design.
 
 ```
 apps/mobile/       Expo (SDK 57) + React Native app — TypeScript
-services/api/      FastAPI service (Python 3.12, uv) — AI + complex XP logic
+services/api/      FastAPI service (Python 3.12, uv) — the app's data API: roadmaps, XP, marketplace, AI
 packages/shared/   Shared TS types + XP curve (@gamify/shared)
 supabase/          Postgres migrations, RLS policies, config
 ```
@@ -58,6 +58,13 @@ Optional until the app gets a Supabase client.
 
 Start Docker Desktop first. The first start downloads about 2 GB of images.
 
+Auth signs JWTs with a local ES256 key. Create the gitignored key file once:
+
+```bash
+echo '[]' > supabase/signing_keys.json
+pnpm exec supabase gen signing-key --algorithm ES256 --yes
+```
+
 ```bash
 pnpm db:start                 # Postgres, Auth, Storage, Realtime, Studio; applies supabase/migrations
 pnpm exec supabase status     # prints the URLs and keys again
@@ -76,9 +83,16 @@ services this project doesn't use yet.
 ### API
 
 ```bash
-cp services/api/.env.example services/api/.env   # service-role key from `supabase status`
+cp services/api/.env.example services/api/.env   # add an AI vendor key for the /ai endpoints
 pnpm api                                          # http://127.0.0.1:8000, docs at /docs
 curl http://127.0.0.1:8000/health                 # {"status":"ok","env":"development"}
+```
+
+Every other endpoint needs `Authorization: Bearer <access token>` from Supabase Auth.
+Tests run against the local Postgres, each inside a rolled-back transaction:
+
+```bash
+cd services/api && uv run --env-file .env pytest
 ```
 
 ### Mobile env
@@ -121,8 +135,10 @@ Secrets live in untracked `.env` files (`.env.example` templates are committed):
 - `apps/mobile/.env`: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
   `EXPO_PUBLIC_API_URL`. Everything `EXPO_PUBLIC_*` ships inside the app bundle, so
   never put a secret here.
-- `services/api/.env`: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`,
-  `ENVIRONMENT`
+- `services/api/.env`: `DATABASE_URL`, `SUPABASE_URL` (JWT issuer and JWKS),
+  `AI_MODEL_AUTHORING` / `AI_MODEL_FAST` (any Pydantic AI `<provider>:<model>` string),
+  the matching vendor key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY`),
+  and `ENVIRONMENT`
 
 ## Troubleshooting
 

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a pnpm monorepo. The Expo/React Native client lives in `apps/mobile`; routes are in `src/app`, reusable UI in `src/components`, hooks in `src/hooks`, theme constants in `src/constants`, and static files in `assets`. The FastAPI service is under `services/api/app`, with configuration in `config.py` and endpoints in `main.py`. Shared TypeScript domain types and XP helpers belong in `packages/shared/src`. Supabase configuration and ordered SQL migrations live in `supabase/`; add schema changes as new numbered files rather than editing an applied migration. See `ARCHITECTURE.md` for domain boundaries and data flow.
+This is a pnpm monorepo. The Expo/React Native client lives in `apps/mobile`; routes are in `src/app`, reusable UI in `src/components`, hooks in `src/hooks`, theme constants in `src/constants`, and static files in `assets`. The FastAPI service is under `services/api/app`: shared plumbing (`config.py`, `db.py`, `auth.py`, `errors.py`, `main.py`) plus one package per domain, and tests in `services/api/tests`. The shared XP curve lives in `packages/shared/src`. Supabase configuration and ordered SQL migrations live in `supabase/`; add schema changes as new numbered files rather than editing an applied migration. See `ARCHITECTURE.md` for domain boundaries and data flow.
 
 ## Build, Test, and Development Commands
 
@@ -21,7 +21,7 @@ TypeScript is strict. Match the existing two-space indentation, single quotes, s
 
 ## Testing Guidelines
 
-No automated test runner or coverage threshold is configured yet. For every behavior change, add test tooling and a matching script when introducing the first tests: colocate mobile tests as `*.test.ts(x)` and place API tests in `services/api/tests/test_*.py`. Until then, run mobile lint, exercise `GET /health`, and use `pnpm db:reset` to validate migrations.
+The API uses pytest: `cd services/api && uv run --env-file .env pytest`. Put API tests in `services/api/tests/test_*.py`; tests that need Postgres run against the local Supabase database inside a rolled-back transaction. The mobile app has no test runner yet: when adding its first tests, add the tooling and a script, and colocate them as `*.test.ts(x)`. Until then, run mobile lint. Use `pnpm db:reset` to validate migrations.
 
 ## Commit & Pull Request Guidelines
 

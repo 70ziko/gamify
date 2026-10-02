@@ -1,23 +1,23 @@
 # Architecture
 
 A native mobile app that gamifies tasks and habits Duolingo-style, where every
-meaningful action resolves to **EXP** against a user-defined **goal**. Curated
-courses and habits are shareable through a **public marketplace**, with
+meaningful action resolves to **EXP** against a user-defined **roadmap**.
+Curated courses and habits are shareable through a **public marketplace**, with
 leaderboards layered on top.
 
 ## Stack
 
 | Layer | Choice |
 |---|---|
-| Mobile | Expo (SDK 56) + React Native 0.85, New Architecture, TypeScript |
+| Mobile | Expo (SDK 57) + React Native 0.86, New Architecture, TypeScript |
 | Navigation | Expo Router (file-based) |
 | UI | Expo UI (SwiftUI / Jetpack Compose) + Nativewind |
 | Animation | Reanimated + Gesture Handler |
 | Client state | Zustand (UI) + TanStack Query (server cache, optimistic writes) |
-| Backend (BaaS) | Supabase — Postgres + Auth + Realtime + Storage + RLS |
-| Custom service | FastAPI (Python 3.12) for AI + complex XP/marketplace logic |
-| AI | Anthropic Claude API (Opus for authoring, Haiku for cheap suggestions) |
-| Jobs | Supabase pg_cron + Edge Functions |
+| Auth + database | Supabase: Auth (JWTs signed with ES256) and Postgres |
+| API | FastAPI (Python 3.12), SQLAlchemy 2 async + asyncpg: the app's only data API |
+| AI | Vendor-neutral through Pydantic AI; models are `<provider>:<model>` config strings |
+| Jobs | pg_cron (weekly league rollover, later) |
 | Push | Expo Notifications |
 | Payments | RevenueCat (later — subscriptions + paid marketplace listings) |
 | Builds/OTA | EAS Build + EAS Update |
@@ -29,84 +29,103 @@ leaderboards layered on top.
 ┌─────────────────────────────┐
 │   Expo / React Native app   │  iOS + Android (one codebase)
 └──────┬───────────────┬──────┘
-       │ supabase-js   │ HTTPS (JWT)
-       │ (auth, CRUD,  ▼
-       │  realtime)  ┌──────────────┐
-       │             │   FastAPI    │  AI + complex XP / marketplace logic
-       │             │  (Python)    │──► Anthropic Claude API
-       ▼             └──────┬───────┘
+       │ supabase-js   │ HTTPS, Bearer <Supabase access token>
+       │ (sign-in      ▼
+       │  only)      ┌──────────────┐  verifies JWTs against Supabase JWKS
+       │             │   FastAPI    │──► LLM vendor (Anthropic, OpenAI, Google, …)
+       │             └──────┬───────┘
+       ▼                    ▼ asyncpg, table owner
 ┌─────────────────────────────┐
-│          Supabase           │  Postgres + RLS · Auth · Realtime ·
-│                             │  Storage · pg_cron · Edge Functions
+│          Supabase           │  Auth · Postgres (RLS on, no Data API grants)
 └─────────────────────────────┘
 ```
 
-- **Read / simple-write path:** app ↔ Supabase directly, protected by RLS.
-- **Smart path:** app → FastAPI for AI generation and XP rules that need real
-  logic; FastAPI writes to Postgres with the service-role key.
+- **API-first.** The app signs in with supabase-js and sends the access token to
+  FastAPI for every read and write. The Data API roles (`anon`, `authenticated`)
+  have no grants, so clients can't reach tables directly and can't forge XP.
+- **Auth.** `app/auth.py` verifies ES256/RS256 tokens against
+  `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (audience `authenticated`, issuer
+  `<SUPABASE_URL>/auth/v1`). Staff users carry `app_metadata.staff = true`, which
+  only the service role can set.
+- **Realtime** comes back for leagues, with scoped `select` grants.
 
 ## Core domain — the EXP abstraction
 
-Every action emits an XP event against a goal. Everything else composes on top.
+Every completed step emits an XP event. Everything else composes on top.
 
-- **`goals`** — the abstraction: any user-defined objective. May link back to a
-  marketplace listing it was adopted from.
-- **`activities`** — repeatable/completable units under a goal (habit / task /
-  lesson), with a recurrence rule and base XP.
-- **`xp_events`** — the **append-only ledger**: `(user_id, goal_id, activity_id,
-  amount, multiplier, source, created_at)`. Never mutated. XP totals, levels,
-  streaks, and leaderboard ranks are all **derived** from it.
-- **`streaks`** — per-user and per-goal current/longest + freezes; advanced by a
-  daily pg_cron rollover.
-- **`levels`** — XP→level curve as config (see `xpForLevel` in `@gamify/shared`)
-  so progression retunes without a release.
-- **`leagues` / `league_members`** — weekly cohort leaderboards; ranking is a
-  query over `xp_events` in the week window, pushed live via Realtime.
+- **`roadmaps` → `units` → `steps`.** A roadmap is a `course` (one-off steps) or
+  a `habit` (steps repeat daily). Steps hold `minutes`, `xp`, and `exercises`
+  (JSONB: `quiz`, `check`, `timer`). The API computes XP from minutes
+  (`app/progress/xp.py`), so neither clients nor AI pick XP.
+- **`RoadmapDraft`** (`app/roadmaps/schemas.py`) is the one tree shape for manual
+  creation, AI output, marketplace snapshots, and installs.
+- **`xp_events`** — the append-only ledger, written only by the API. Each row has
+  an `idempotency_key` unique per user (`step:<id>`, `step:<id>:<date>` for habits,
+  `quest:<code>:<date>`), so retries never double-award. Totals, levels, step
+  completion, roadmap progress, quest progress, and leaderboards are derived from it.
+- **`streaks`** — one per user, evaluated lazily in the user's timezone: completing
+  a step advances it; missing exactly yesterday marks it at risk; a freeze
+  (`POST /me/streak/freeze`) repairs it. No cron job.
+- **Daily quests** — a code catalog (`app/progress/quests.py`) granted in the same
+  transaction as the step that completes them.
+- **Levels** — `xpForLevel` in `@gamify/shared`, mirrored in `app/progress/levels.py`.
 
 ## Marketplace
 
-Courses and habits are publicly publishable templates that other users adopt.
+Courses and habits are publishable templates that other users install.
 
-- **`marketplace_listings`** — `kind` (course | habit), `author_id`, `status`
-  (draft | published | unlisted | removed), `is_paid` / `price_cents`, and
-  denormalized `installs` / `rating_avg` / `rating_count` / `version`.
-- **`listing_items`** — the template contents that instantiate `goals` +
-  `activities` on install.
-- **`listing_reviews`** — 1–5 ratings + text; aggregates roll up onto the listing.
-- **Adoption:** installing a listing creates the user's own `goals`/`activities`
-  with `source_course_id` set, so their private progress stays decoupled from the
-  public template (which can version independently).
-- **RLS split:** private rows (goals, activities, xp_events) are owner-only;
-  **published** listings and their reviews are world-readable, writable only by
-  the author. Moderation/reporting and payouts for paid listings live in FastAPI.
+- **`marketplace_listings`** — `kind`, `author_id`, source `roadmap_id`, `status`
+  (draft | published | unlisted | removed), `is_official`, and denormalized
+  `installs` / `rating_avg` / `rating_count`. A generated `search` tsvector backs
+  full-text search.
+- **`listing_versions`** — immutable JSONB `RoadmapDraft` snapshots. Publishing a
+  new version snapshots the author's current roadmap.
+- **Install** materializes the latest snapshot into the user's own roadmap with
+  `source_listing_id` / `source_version`, so private progress never touches the
+  template. The listing leaderboard sums XP earned in installed copies.
+- **`listing_reviews`** — one 1–5 rating per installer; aggregates recompute in
+  the same transaction. Only staff can set `is_official` or `removed`.
+
+## AI
+
+- **Models** are config: `AI_MODEL_AUTHORING` and `AI_MODEL_FAST` take any Pydantic
+  AI `<provider>:<model>` string. Switching vendor means changing the string and
+  setting that vendor's key env var.
+- **Flows** are async functions `(input, FlowContext) -> BaseModel`
+  (`app/ai/flow.py`). `FlowContext` reports stages and accumulates token usage. A
+  flow from another engine (for example `odyss_ai_flows`) plugs in as another
+  function with the same signature.
+- **Runner** (`app/ai/runner.py`) records every run in `ai_runs` (status, stage,
+  input, output, tokens) and enforces free-plan daily quotas. Long flows run as
+  background tasks the app polls; short ones run inline.
+- **Flows today:** `roadmap_draft` (outline, then each unit in parallel) and
+  `step_suggestions` (fast model).
 
 ## Repository layout
 
 ```
 gamify/
 ├── apps/mobile/        # Expo app (TypeScript)
-├── services/api/       # FastAPI service (Python, uv)
-├── packages/shared/    # Shared TS types + XP curve (@gamify/shared)
-├── supabase/           # migrations, RLS policies, Edge Functions, seed
+├── services/api/       # FastAPI service (Python, uv): one package per domain
+├── packages/shared/    # XP curve shared with the app (@gamify/shared)
+├── supabase/           # migrations, config
 └── .github/workflows/  # EAS build + API deploy (later)
 ```
 
 ## Offline stance
 
 Online-first for MVP: TanStack Query caches reads and queues optimistic writes,
-so the app feels instant on flaky connections. The data model is designed so a
-local SQLite mirror + background sync (e.g. PowerSync + Supabase) can be layered
-in later without a rewrite — the optimistic-write path is the seam.
+so the app feels instant on flaky connections. Idempotent step completion makes
+queued writes safe to retry.
 
 ## Build sequence
 
-1. Scaffold monorepo (done: pnpm workspace, Expo app, FastAPI, Supabase).
-2. Schema migration + RLS + XP/level seed.
-3. Auth end-to-end (email + Sign in with Apple).
-4. XP vertical slice: goal → activity → complete → animated XP bar.
-5. FastAPI + Claude: text prompt → generated goal + activities.
-6. Streaks + pg_cron rollover.
-7. Marketplace: publish, browse, install, review.
-8. Leaderboards (leagues + Realtime).
-9. Ops: Sentry, PostHog, EAS Build/Update, TestFlight.
-```
+1. Scaffold monorepo (done).
+2. Schema + XP ledger (done, API side).
+3. Auth end-to-end: JWT verification done in the API; app sign-in pending.
+4. XP vertical slice in the app: roadmap → step → complete → animated XP bar.
+5. AI roadmap drafts and step suggestions (done, API side).
+6. Streaks and daily quests (done, API side).
+7. Marketplace: publish, browse, install, review (done, API side).
+8. Leaderboards: leagues, weekly pg_cron rollover, Realtime.
+9. Ops: Sentry, PostHog, EAS Build/Update, TestFlight, API hosting.

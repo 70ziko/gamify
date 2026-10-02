@@ -19,6 +19,7 @@ __pycache__/
 *.py[cod]
 .venv/
 services/api/.venv/
+.pytest_cache/
 .python-version
 
 # Supabase

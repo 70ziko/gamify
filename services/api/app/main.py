@@ -1,51 +1,25 @@
-"""Gamify API — thin Python service for AI + complex XP/marketplace logic.
-
-The mobile app talks to Supabase directly for auth, CRUD, and realtime. It only
-calls this service for the "smart" path: AI generation and rules that are awkward
-to express in SQL. See ARCHITECTURE.md.
-"""
-
 from fastapi import FastAPI
-from pydantic import BaseModel
 
+from app.ai.router import router as ai_router
 from app.config import get_settings
-
-app = FastAPI(title="Gamify API", version="0.0.0")
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "env": get_settings().environment}
+from app.errors import install_error_handlers
+from app.marketplace.router import router as marketplace_router
+from app.profiles.router import router as profiles_router
+from app.progress.router import router as progress_router
+from app.roadmaps.router import router as roadmaps_router
 
 
-class GoalFromPromptRequest(BaseModel):
-    prompt: str
+def create_app() -> FastAPI:
+    app = FastAPI(title="Gamify API", version="0.1.0")
+    install_error_handlers(app)
+    for router in (profiles_router, progress_router, roadmaps_router, marketplace_router, ai_router):
+        app.include_router(router)
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok", "env": get_settings().environment}
+
+    return app
 
 
-class GeneratedActivity(BaseModel):
-    title: str
-    recurrence: str | None = None
-    base_xp: int
-
-
-class GoalFromPromptResponse(BaseModel):
-    title: str
-    category: str
-    activities: list[GeneratedActivity]
-
-
-@app.post("/goals/from-prompt", response_model=GoalFromPromptResponse)
-def goal_from_prompt(req: GoalFromPromptRequest) -> GoalFromPromptResponse:
-    """Decompose a free-text goal into a goal + activities via Claude.
-
-    Stubbed for now so the wiring is verifiable before AI is connected. Build 5
-    replaces this body with an Anthropic call (model = settings.model_authoring)
-    and persists the result to Supabase with the service-role key.
-    """
-    return GoalFromPromptResponse(
-        title=req.prompt.strip()[:80] or "New goal",
-        category="custom",
-        activities=[
-            GeneratedActivity(title="Daily check-in", recurrence="FREQ=DAILY", base_xp=10),
-        ],
-    )
+app = create_app()

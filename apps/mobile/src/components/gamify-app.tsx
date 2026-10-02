@@ -1,13 +1,17 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
+  Animated,
+  Easing,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 import {
@@ -39,7 +43,6 @@ type ScreenName =
   | 'roadmap'
   | 'step'
   | 'complete'
-  | 'create'
   | 'ai-prompt'
   | 'ai-generating'
   | 'ai-review'
@@ -75,8 +78,6 @@ export function GamifyApp() {
       return <StepScreen onClose={() => setScreen('roadmap')} onComplete={() => setScreen('complete')} />;
     case 'complete':
       return <CompleteScreen onContinue={() => setScreen('roadmap')} />;
-    case 'create':
-      return <CreateScreen onBack={() => setScreen('explore')} onAi={() => setScreen('ai-prompt')} onManual={() => setScreen('manual')} onExplore={() => setScreen('explore')} />;
     case 'ai-prompt':
       return <AiPromptScreen onBack={() => setScreen('explore')} onGenerate={() => setScreen('ai-generating')} />;
     case 'ai-generating':
@@ -84,9 +85,9 @@ export function GamifyApp() {
     case 'ai-review':
       return <AiReviewScreen onBack={() => setScreen('ai-prompt')} onStart={() => setScreen('roadmap')} />;
     case 'manual':
-      return <ManualScreen onBack={() => setScreen('create')} onCreate={() => setScreen('home')} />;
+      return <ManualScreen onBack={() => setScreen('explore')} onCreate={() => setScreen('home')} />;
     case 'explore':
-      return <ExploreScreen mode={mode} onSelect={selectMain} onCourse={() => setScreen('course')} onCreateAi={() => setScreen('ai-prompt')} onCreateOther={() => setScreen('create')} />;
+      return <ExploreScreen mode={mode} onSelect={selectMain} onCourse={() => setScreen('course')} onCreateAi={() => setScreen('ai-prompt')} onCreateManual={() => setScreen('manual')} />;
     case 'course':
       return <CourseScreen mode={mode} onBack={() => setScreen('explore')} onAdd={() => setScreen('home')} />;
     case 'league':
@@ -654,47 +655,69 @@ function CompleteStat({ p, value, label, color }: { p: Palette; value: string; l
   );
 }
 
-function CreateScreen({ onBack, onAi, onManual, onExplore }: { onBack: () => void; onAi: () => void; onManual: () => void; onExplore: () => void }) {
-  const p = palette.dark;
+// Bottom sheet over Explore for picking a creation flow. Tapping the dimmed backdrop (or Android back) slides it away.
+function CreateSheet({ mode, visible, onClose, onAi, onManual }: { mode: ThemeMode; visible: boolean; onClose: () => void; onAi: () => void; onManual: () => void }) {
+  const p = palette[mode];
+  const insets = useSafeAreaInsets();
+  const [progress] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (visible) {
+      Animated.timing(progress, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    }
+  }, [visible, progress]);
+
+  const close = () => {
+    Animated.timing(progress, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => onClose());
+  };
+
   return (
-    <ScreenFrame mode="dark" background={p.overlay} bottomColor={p.raised}>
-      <View style={styles.createBackdrop}>
-        <GText weight={800} style={{ color: p.dim, opacity: 0.55, fontSize: 24 }}>Alex</GText>
-        <View style={[styles.skeletonLarge, { backgroundColor: p.sunken }]} />
-        <View style={[styles.skeletonSmall, { backgroundColor: p.sunken }]} />
-        <Pressable onPress={onBack} style={styles.dismissCreate}><GText weight={800} style={{ color: p.dim, fontSize: 22 }}>×</GText></Pressable>
-      </View>
-      <View style={[styles.createSheet, { backgroundColor: p.raised, borderTopColor: p.borderStrong }]}>
-        <View style={[styles.sheetHandle, { backgroundColor: p.subtle }]} />
-        <GText weight={800} style={{ color: p.ink, fontSize: 21, marginBottom: 14 }}>Start something new</GText>
-        <GradientCard colors={[p.raised, p.surface]} style={[styles.aiCreateCard, { borderColor: p.accent }]}>
-          <Pressable onPress={onAi} style={styles.aiCreateInner}>
-            <LinearGradient colors={[p.accent, p.accentDeep]} style={styles.aiCreateIcon}>
-              <GText weight={800} style={{ color: p.bg, fontSize: 24 }}>★</GText>
-            </LinearGradient>
-            <View style={{ flex: 1 }}>
-              <View style={[styles.row, { gap: 7 }]}>
-                <GText weight={800} style={{ color: p.ink, fontSize: 15 }}>Build with AI</GText>
-                <View style={[styles.fastestBadge, { backgroundColor: p.og }]}><GText weight={800} style={{ color: p.bg, fontSize: 8.5 }}>FASTEST</GText></View>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={close}>
+      <View style={styles.sheetRoot}>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(12, 8, 16, 0.62)', opacity: progress }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close" style={StyleSheet.absoluteFill} onPress={close} />
+        </Animated.View>
+        <Animated.View
+          style={[
+            styles.createSheet,
+            {
+              backgroundColor: p.raised,
+              borderTopColor: p.borderStrong,
+              paddingBottom: 22 + insets.bottom,
+              transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [640, 0] }) }],
+            },
+          ]}>
+          <View style={[styles.sheetHandle, { backgroundColor: p.subtle }]} />
+          <GText weight={800} style={{ color: p.ink, fontSize: 21, marginBottom: 14 }}>Start something new</GText>
+          <GradientCard colors={[p.raised, p.surface]} style={[styles.aiCreateCard, { borderColor: p.accent }]}>
+            <Pressable onPress={onAi} style={styles.aiCreateInner}>
+              <LinearGradient colors={[p.accent, p.accentDeep]} style={styles.aiCreateIcon}>
+                <GText weight={800} style={{ color: palette.dark.bg, fontSize: 24 }}>★</GText>
+              </LinearGradient>
+              <View style={{ flex: 1 }}>
+                <View style={[styles.row, { gap: 7 }]}>
+                  <GText weight={800} style={{ color: p.ink, fontSize: 15 }}>Build with AI</GText>
+                  <View style={[styles.fastestBadge, { backgroundColor: p.og }]}><GText weight={800} style={{ color: palette.dark.bg, fontSize: 8.5 }}>FASTEST</GText></View>
+                </View>
+                <GText style={{ color: p.muted, fontSize: 11.5, lineHeight: 17, marginTop: 3 }}>Describe a goal in a sentence. Get units, steps and XP.</GText>
               </View>
-              <GText style={{ color: p.muted, fontSize: 11.5, lineHeight: 17, marginTop: 3 }}>Describe a goal in a sentence. Get units, steps and XP.</GText>
+            </Pressable>
+            <View style={styles.suggestionRow}>
+              {['Run a 10k', 'Learn Rust', 'Sleep earlier'].map((label) => <View key={label} style={[styles.suggestion, { backgroundColor: `${p.accent}18` }]}><GText weight={600} style={{ color: mode === 'dark' ? '#E5B8A6' : p.accentShadow, fontSize: 10.5 }}>{label}</GText></View>)}
             </View>
-          </Pressable>
-          <View style={styles.suggestionRow}>
-            {['Run a 10k', 'Learn Rust', 'Sleep earlier'].map((label) => <View key={label} style={[styles.suggestion, { backgroundColor: `${p.accent}18` }]}><GText weight={600} style={{ color: '#E5B8A6', fontSize: 10.5 }}>{label}</GText></View>)}
+          </GradientCard>
+          <View style={styles.createOptions}>
+            <CreateOption p={p} glyph="＋" color={p.primary} title="Build manually" subtitle="Add your own steps and rules." onPress={onManual} />
+            <CreateOption p={p} glyph="◉" color={p.success} title="From marketplace" subtitle="Fork a ranked roadmap." onPress={close} />
           </View>
-        </GradientCard>
-        <View style={styles.createOptions}>
-          <CreateOption p={p} glyph="＋" color={p.primary} title="Build manually" subtitle="Add your own steps and rules." onPress={onManual} />
-          <CreateOption p={p} glyph="◉" color={p.success} title="From marketplace" subtitle="Fork a ranked roadmap." onPress={onExplore} />
-        </View>
-        <Card p={p} style={styles.quickHabit}>
-          <IconTile glyph="▣" color={p.streak} backgroundColor={`${p.streak}20`} size={34} rounded={11} textSize={15} />
-          <View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13.5 }}>Quick habit</GText><GText style={{ color: p.muted, fontSize: 11 }}>One thing, every day. 20 seconds to set up.</GText></View>
-          <GText weight={700} style={{ color: p.dim, fontSize: 24 }}>›</GText>
-        </Card>
+          <Card p={p} style={styles.quickHabit}>
+            <IconTile glyph="▣" color={p.streak} backgroundColor={`${p.streak}20`} size={34} rounded={11} textSize={15} />
+            <View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13.5 }}>Quick habit</GText><GText style={{ color: p.muted, fontSize: 11 }}>One thing, every day. 20 seconds to set up.</GText></View>
+            <GText weight={700} style={{ color: p.dim, fontSize: 24 }}>›</GText>
+          </Card>
+        </Animated.View>
       </View>
-    </ScreenFrame>
+    </Modal>
   );
 }
 
@@ -876,15 +899,16 @@ function ManualStep({ p, label, xp }: { p: Palette; label: string; xp: string })
   return <Card p={p} style={styles.manualStep}><GText weight={700} style={{ color: p.subtle, fontSize: 15 }}>☰</GText><GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 13 }}>{label}</GText><GText weight={700} style={{ color: p.streak, fontSize: 11 }}>{xp}</GText></Card>;
 }
 
-function ExploreScreen({ mode, onSelect, onCourse, onCreateAi, onCreateOther }: { mode: ThemeMode; onSelect: (tab: MainTab) => void; onCourse: () => void; onCreateAi: () => void; onCreateOther: () => void }) {
+function ExploreScreen({ mode, onSelect, onCourse, onCreateAi, onCreateManual }: { mode: ThemeMode; onSelect: (tab: MainTab) => void; onCourse: () => void; onCreateAi: () => void; onCreateManual: () => void }) {
   const p = palette[mode];
   const [filter, setFilter] = useState('For you');
+  const [createOpen, setCreateOpen] = useState(false);
   return (
     <MainScaffold mode={mode} active="explore" onSelect={onSelect}>
       <GText weight={800} style={{ color: p.ink, fontSize: 24, letterSpacing: -0.4 }}>Explore</GText>
       <Pressable
         accessibilityRole="button"
-        onPress={onCreateAi}
+        onPress={() => setCreateOpen(true)}
         style={({ pressed }) => [styles.aiCtaShadow, { backgroundColor: p.accentShadow }, pressed && { opacity: 0.85, transform: [{ scale: 0.99 }] }]}>
         <LinearGradient colors={[p.accent, p.accentDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.aiCta}>
           <View style={[styles.aiCtaIcon, { backgroundColor: `${palette.dark.bg}1A` }]}><SparkleIcon color={palette.dark.bg} /></View>
@@ -894,9 +918,6 @@ function ExploreScreen({ mode, onSelect, onCourse, onCreateAi, onCreateOther }: 
           </View>
           <View style={[styles.aiCtaPlus, { backgroundColor: palette.dark.bg }]}><GText weight={800} style={{ color: p.accent, fontSize: 22, lineHeight: 24 }}>+</GText></View>
         </LinearGradient>
-      </Pressable>
-      <Pressable onPress={onCreateOther} style={styles.moreWays}>
-        <GText weight={700} style={{ color: p.muted, fontSize: 12 }}>Build manually or add a quick habit ›</GText>
       </Pressable>
       <View style={[styles.searchBox, { backgroundColor: p.surface, borderColor: p.border }]}><GText style={{ color: p.dim, fontSize: 19 }}>⌕</GText><GText style={{ color: p.dim, fontSize: 12.5 }}>Search roadmaps, habits, courses</GText></View>
       <View style={styles.filterRow}>{['For you', 'Trending', 'Official', 'Free'].map((label) => <Pill key={label} label={label} p={p} selected={filter === label} showCheck={false} onPress={() => setFilter(label)} style={{ minHeight: 36, paddingHorizontal: 13 }} />)}</View>
@@ -919,6 +940,7 @@ function ExploreScreen({ mode, onSelect, onCourse, onCreateAi, onCreateOther }: 
         <SectionTitle p={p}>Quick habits</SectionTitle>
         <View style={styles.roadmapCards}><Card p={p} style={styles.quickHabitCard}><GText weight={700} style={{ color: p.ink, fontSize: 12.5 }}>Cold shower</GText><GText style={{ color: p.muted, fontSize: 10.5, marginTop: 3 }}>30 days · 5.1k</GText></Card><Card p={p} style={styles.quickHabitCard}><GText weight={700} style={{ color: p.ink, fontSize: 12.5 }}>Inbox zero</GText><GText style={{ color: p.muted, fontSize: 10.5, marginTop: 3 }}>14 days · 3.8k</GText></Card></View>
       </View>
+      <CreateSheet mode={mode} visible={createOpen} onClose={() => setCreateOpen(false)} onAi={onCreateAi} onManual={onCreateManual} />
     </MainScaffold>
   );
 }
@@ -1155,11 +1177,10 @@ const styles = StyleSheet.create({
   completeStat: { flex: 1, alignItems: 'center', paddingVertical: 18, borderRadius: 18 },
   completeLevel: { padding: 16, borderRadius: 20 },
   streakSecured: { flexDirection: 'row', gap: 7, paddingTop: 11, borderTopWidth: 1 },
-  createBackdrop: { flex: 1, paddingHorizontal: 22, paddingTop: 10, gap: 18 },
   streakBackdrop: { flex: 1, paddingHorizontal: 22, paddingTop: 10, gap: 18 },
-  dismissCreate: { position: 'absolute', top: 5, right: 20 },
   skeletonLarge: { height: 145, borderRadius: 25 },
   skeletonSmall: { height: 58, borderRadius: 20 },
+  sheetRoot: { flex: 1, justifyContent: 'flex-end' },
   createSheet: { borderTopWidth: 1, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 22, paddingBottom: 28 },
   sheetHandle: { width: 46, height: 5, borderRadius: 999, alignSelf: 'center', marginTop: -10, marginBottom: 18 },
   aiCreateCard: { borderWidth: 1.5, borderRadius: 22, padding: 16 },
@@ -1204,8 +1225,7 @@ const styles = StyleSheet.create({
   aiCta: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 22, paddingVertical: 18, paddingHorizontal: 16 },
   aiCtaIcon: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   aiCtaPlus: { width: 38, height: 38, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  moreWays: { alignSelf: 'center', paddingVertical: 10, marginTop: 2 },
-  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 15, height: 48, paddingHorizontal: 14, marginTop: 6 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 15, height: 48, paddingHorizontal: 14, marginTop: 14 },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 12, marginBottom: 15 },
   featureCard: { borderRadius: 23, padding: 18, overflow: 'hidden', minHeight: 175, marginBottom: 18 },
   featureBubble: { position: 'absolute', width: 150, height: 150, borderRadius: 999, right: -34, bottom: -54, backgroundColor: 'rgba(244,169,140,.22)' },

@@ -1,23 +1,20 @@
-"""Runtime configuration, loaded from environment / .env."""
-
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    # Supabase — the API talks to Postgres with the service-role key (bypasses RLS).
-    supabase_url: str = ""
-    supabase_service_role_key: str = ""
-
-    # Anthropic Claude
-    anthropic_api_key: str = ""
-    model_authoring: str = "claude-opus-4-8"
-    model_fast: str = "claude-haiku-4-5-20251001"
-
     environment: str = "development"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:54322/postgres"
+    supabase_url: str = "http://127.0.0.1:54321"
+
+    ai_model_authoring: str = "anthropic:claude-opus-5-5"
+    ai_model_fast: str = "anthropic:claude-haiku-4-5-20251001"
+    ai_free_daily_drafts: int = 3
+
+    @property
+    def auth_issuer(self) -> str:
+        return f"{self.supabase_url}/auth/v1"
 
 
 @lru_cache
