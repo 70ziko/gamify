@@ -1,5 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
+import { type AndroidSymbol, type SFSymbol, SymbolView } from 'expo-symbols';
 import type { PropsWithChildren, ReactNode } from 'react';
 import {
   Platform,
@@ -22,12 +23,15 @@ export const palette = {
   dark: {
     bg: '#231A2B',
     overlay: '#1A1320',
-    surface: '#2A2035',
-    raised: '#33263F',
-    sunken: '#241C2E',
+    surface: '#30243A',
+    raised: '#3A2C45',
+    sunken: '#261D30',
     chrome: '#1E1626',
-    border: '#3B2E45',
-    borderStrong: '#43334F',
+    border: '#42344D',
+    borderStrong: '#4C3B58',
+    // Peach-tinted surface for the moments that should feel personal (Home's today card).
+    warm: '#3B2832',
+    warmBorder: '#5C3F47',
     ink: '#F2ECF6',
     muted: '#AEA1BC',
     dim: '#8C8098',
@@ -38,6 +42,7 @@ export const palette = {
     accent: '#F4A98C',
     accentDeep: '#EF8F80',
     accentShadow: '#C9705F',
+    accentText: '#F5B59D',
     success: '#74C79C',
     streak: '#F0B45E',
     og: '#F7D699',
@@ -52,6 +57,8 @@ export const palette = {
     chrome: '#FFFFFF',
     border: '#EBE0EA',
     borderStrong: '#E3D7E2',
+    warm: '#FFF1EA',
+    warmBorder: '#F6D4C6',
     ink: '#2C2135',
     muted: '#6E6379',
     dim: '#948AA0',
@@ -62,6 +69,7 @@ export const palette = {
     accent: '#EF927B',
     accentDeep: '#E2765F',
     accentShadow: '#C9604A',
+    accentText: '#BF5741',
     success: '#32936F',
     streak: '#BE7B16',
     og: '#F7D699',
@@ -231,15 +239,17 @@ export function ProgressBar({
   value,
   p,
   color,
+  trackColor,
   height = 7,
 }: {
   value: number;
   p: Palette;
   color?: string;
+  trackColor?: string;
   height?: number;
 }) {
   return (
-    <View style={[styles.progressTrack, { backgroundColor: p.sunken, height }]}>
+    <View style={[styles.progressTrack, { backgroundColor: trackColor ?? p.sunken, height }]}>
       <View
         style={[
           styles.progressValue,
@@ -450,7 +460,57 @@ export function MainScaffold({
   );
 }
 
+// Each icon is an SF Symbol on iOS and a Material Symbol on Android and web (expo-symbols loads the font there).
+const icons = {
+  attach: ['paperclip', 'attach_file'],
+  bell: ['bell.fill', 'notifications'],
+  bolt: ['bolt.fill', 'bolt'],
+  book: ['book.fill', 'menu_book'],
+  check: ['checkmark', 'check'],
+  checklist: ['checklist', 'checklist'],
+  clock: ['clock', 'schedule'],
+  drag: ['line.3.horizontal', 'drag_indicator'],
+  dumbbell: ['dumbbell.fill', 'fitness_center'],
+  edit: ['pencil', 'edit'],
+  flag: ['flag.fill', 'flag'],
+  gear: ['gearshape.fill', 'settings'],
+  gem: ['diamond.fill', 'diamond'],
+  globe: ['globe', 'public'],
+  heart: ['heart', 'favorite'],
+  heartFill: ['heart.fill', 'favorite'],
+  inbox: ['tray.fill', 'inbox'],
+  language: ['character.bubble', 'translate'],
+  link: ['link', 'link'],
+  medal: ['medal.fill', 'military_tech'],
+  moon: ['moon.stars.fill', 'bedtime'],
+  piano: ['pianokeys', 'piano'],
+  play: ['play.fill', 'play_arrow'],
+  plus: ['plus', 'add'],
+  refresh: ['arrow.clockwise', 'refresh'],
+  run: ['figure.run', 'directions_run'],
+  search: ['magnifyingglass', 'search'],
+  share: ['square.and.arrow.up', 'share'],
+  shower: ['shower.fill', 'shower'],
+  smile: ['face.smiling', 'sentiment_satisfied'],
+  snowflake: ['snowflake', 'ac_unit'],
+  sparkles: ['sparkles', 'auto_awesome'],
+  star: ['star.fill', 'star'],
+  store: ['storefront', 'storefront'],
+  sun: ['sun.max.fill', 'sunny'],
+  sunrise: ['sunrise.fill', 'wb_twilight'],
+  trophy: ['trophy.fill', 'trophy'],
+} as const satisfies Record<string, readonly [SFSymbol, AndroidSymbol]>;
+
+export type IconName = keyof typeof icons;
+
+export function Icon({ name, color, size = 20 }: { name: IconName; color: string; size?: number }) {
+  const [ios, material] = icons[name];
+  return <SymbolView name={{ ios, android: material, web: material }} tintColor={color} size={size} />;
+}
+
+// Pass `icon` for a symbol, or `glyph` for text such as a unit number or an emoji.
 export function IconTile({
+  icon,
   glyph,
   color,
   backgroundColor,
@@ -458,7 +518,8 @@ export function IconTile({
   rounded = 13,
   textSize = 18,
 }: {
-  glyph: string;
+  icon?: IconName;
+  glyph?: string;
   color: string;
   backgroundColor: string;
   size?: number;
@@ -467,9 +528,22 @@ export function IconTile({
 }) {
   return (
     <View style={{ width: size, height: size, borderRadius: rounded, backgroundColor, alignItems: 'center', justifyContent: 'center' }}>
-      <GText weight={800} style={{ color, fontSize: textSize, lineHeight: textSize + 4 }}>
-        {glyph}
-      </GText>
+      {icon ? (
+        <Icon name={icon} color={color} size={textSize + 2} />
+      ) : (
+        <GText weight={800} style={{ color, fontSize: textSize, lineHeight: textSize + 4 }}>
+          {glyph}
+        </GText>
+      )}
+    </View>
+  );
+}
+
+// Stand-in for the mascot until its artwork exists. Keep the footprint so the real art drops into the same slot.
+export function MascotPlaceholder({ size = 68 }: { size?: number }) {
+  return (
+    <View accessibilityLabel="Mascot" style={[styles.mascot, { width: size, height: size, borderRadius: size * 0.32, backgroundColor: palette.dark.og }]}>
+      <Icon name="smile" color={palette.dark.bg} size={size * 0.5} />
     </View>
   );
 }
@@ -486,6 +560,18 @@ export function SectionTitle({
       </GText>
       {right}
     </View>
+  );
+}
+
+// The one style for actions on the right of a section title ("See all", "Add roadmap").
+export function SectionLink({ p, label, icon, onPress }: { p: Palette; label: string; icon?: IconName; onPress?: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" hitSlop={8} onPress={onPress} style={({ pressed }) => [styles.sectionLink, pressed && styles.pressed]}>
+      {icon ? <Icon name={icon} color={p.accentText} size={14} /> : null}
+      <GText weight={700} style={{ color: p.accentText, fontSize: 12 }}>
+        {label}
+      </GText>
+    </Pressable>
   );
 }
 
@@ -643,6 +729,15 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  mascot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   sectionTitleRow: {
     flexDirection: 'row',
