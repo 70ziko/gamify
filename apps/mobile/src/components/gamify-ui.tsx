@@ -195,16 +195,18 @@ export function PrimaryButton({
   onPress,
   p,
   compact = false,
+  disabled = false,
   style,
 }: {
   label: string;
   onPress: () => void;
   p: Palette;
   compact?: boolean;
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.buttonShadow, { backgroundColor: p.accentShadow }, style, pressed && styles.pressed]}>
+    <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.buttonShadow, { backgroundColor: p.accentShadow }, style, pressed && styles.pressed, disabled && styles.disabled]}>
       <LinearGradient
         colors={[p.accent, p.accentDeep]}
         start={{ x: 0, y: 0 }}
@@ -462,35 +464,29 @@ export function MainScaffold({
 
 // Each icon is an SF Symbol on iOS and a Material Symbol on Android and web (expo-symbols loads the font there).
 const icons = {
-  attach: ['paperclip', 'attach_file'],
   bell: ['bell.fill', 'notifications'],
   bolt: ['bolt.fill', 'bolt'],
   book: ['book.fill', 'menu_book'],
+  briefcase: ['briefcase.fill', 'work'],
+  brush: ['paintbrush.fill', 'brush'],
+  chart: ['chart.line.uptrend.xyaxis', 'trending_up'],
   check: ['checkmark', 'check'],
   checklist: ['checklist', 'checklist'],
   clock: ['clock', 'schedule'],
-  drag: ['line.3.horizontal', 'drag_indicator'],
+  close: ['xmark', 'close'],
+  code: ['chevron.left.forwardslash.chevron.right', 'code'],
   dumbbell: ['dumbbell.fill', 'fitness_center'],
-  edit: ['pencil', 'edit'],
   flag: ['flag.fill', 'flag'],
+  fork: ['fork.knife', 'restaurant'],
   gear: ['gearshape.fill', 'settings'],
-  gem: ['diamond.fill', 'diamond'],
   globe: ['globe', 'public'],
-  heart: ['heart', 'favorite'],
-  heartFill: ['heart.fill', 'favorite'],
-  inbox: ['tray.fill', 'inbox'],
   language: ['character.bubble', 'translate'],
-  link: ['link', 'link'],
-  medal: ['medal.fill', 'military_tech'],
   moon: ['moon.stars.fill', 'bedtime'],
   piano: ['pianokeys', 'piano'],
   play: ['play.fill', 'play_arrow'],
   plus: ['plus', 'add'],
   refresh: ['arrow.clockwise', 'refresh'],
-  run: ['figure.run', 'directions_run'],
   search: ['magnifyingglass', 'search'],
-  share: ['square.and.arrow.up', 'share'],
-  shower: ['shower.fill', 'shower'],
   smile: ['face.smiling', 'sentiment_satisfied'],
   snowflake: ['snowflake', 'ac_unit'],
   sparkles: ['sparkles', 'auto_awesome'],
@@ -627,6 +623,9 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.78,
     transform: [{ scale: 0.99 }],
+  },
+  disabled: {
+    opacity: 0.45,
   },
   buttonShadow: {
     borderRadius: 18,

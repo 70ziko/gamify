@@ -26,8 +26,8 @@ supabase/          Postgres migrations, RLS policies, config
 
 ## See the app
 
-The mobile app is a UI prototype: every screen renders hardcoded data, and nothing
-calls Supabase or the API yet. You don't need the backend to look at it.
+The app signs in with Supabase and loads everything from the API, so start the
+[local backend](#local-backend) first and create `apps/mobile/.env` (see [Mobile env](#mobile-env)).
 
 ```bash
 corepack enable   # once per machine
@@ -52,7 +52,7 @@ with a tunnel instead: `pnpm --filter mobile start --tunnel`.
 
 ## Local backend
 
-Optional until the app gets a Supabase client.
+Required to use the app. `supabase/seed.sql` adds a few official marketplace listings on `pnpm db:reset`.
 
 ### Supabase
 
@@ -156,5 +156,5 @@ then try `--tunnel` (see [Run on your phone](#run-on-your-phone)).
 ## Next steps
 
 See the build sequence in [ARCHITECTURE.md](./ARCHITECTURE.md#build-sequence).
-Next up: auth end-to-end, then the XP vertical slice (goal → activity → complete
-→ animated XP bar).
+Next up: the AI flows' prompt design, league tiers with weekly rollover, achievements,
+and push reminders.

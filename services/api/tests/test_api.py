@@ -126,6 +126,28 @@ async def test_streak_freeze(
     assert (await client.post("/me/streak/freeze")).status_code == 409
 
 
+async def test_weekly_league_and_activity(
+    client: AsyncClient, alice: AuthUser, make_user: Callable[..., Any], act_as: Callable[[AuthUser], None]
+) -> None:
+    first, second = (await create_roadmap(client))["units"][0]["steps"]
+    await client.post(f"/steps/{first['id']}/complete")
+    activity = (await client.get("/me/activity")).json()
+    assert (len(activity), activity[-1]["xp"], activity[0]["xp"]) == (28, 50, 0)
+
+    act_as(await make_user("bob"))
+    first, second = (await create_roadmap(client))["units"][0]["steps"]
+    for step in (first, second):
+        await client.post(f"/steps/{step['id']}/complete")
+    bob = (await client.get("/me/league")).json()["me"]
+
+    act_as(alice)
+    league = (await client.get("/me/league")).json()
+    assert (league["me"]["xp"], bob["xp"]) == (50, 120)
+    assert league["me"]["rank"] > bob["rank"]
+    ranked = [entry["display_name"] for entry in league["entries"] if entry["display_name"] in ("alice", "bob")]
+    assert ranked == ["bob", "alice"]
+
+
 async def test_marketplace_publish_install_review(
     client: AsyncClient, alice: AuthUser, make_user: Callable[..., Any], act_as: Callable[[AuthUser], None]
 ) -> None:

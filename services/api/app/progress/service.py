@@ -7,11 +7,15 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import Conflict
+from app.profiles.models import Profile
 from app.profiles.service import get_profile
 from app.progress.levels import level_from_xp
 from app.progress.models import Streak, XpEvent
 from app.progress.quests import QUESTS, Quest
-from app.progress.schemas import CompletionOut, ProgressOut, QuestOut, StreakOut
+from app.progress.schemas import CompletionOut, DayXp, LeagueEntry, LeagueOut, ProgressOut, QuestOut, StreakOut
+
+ACTIVITY_DAYS = 28
+LEAGUE_SIZE = 20
 
 
 def local_today(timezone: str, now: datetime | None = None) -> date:
@@ -21,6 +25,11 @@ def local_today(timezone: str, now: datetime | None = None) -> date:
 def day_bounds(day: date, timezone: str) -> tuple[datetime, datetime]:
     start = datetime.combine(day, time.min, ZoneInfo(timezone))
     return start, datetime.combine(day + timedelta(days=1), time.min, ZoneInfo(timezone))
+
+
+def week_start(now: datetime | None = None) -> datetime:
+    today = (now or datetime.now(UTC)).date()
+    return datetime.combine(today - timedelta(days=today.weekday()), time.min, UTC)
 
 
 def advance_streak(streak: Streak, today: date) -> None:
@@ -179,3 +188,45 @@ async def use_freeze(session: AsyncSession, user_id: UUID) -> StreakOut:
     streak.freezes -= 1
     streak.last_active_on = today - timedelta(days=1)
     return streak_state(streak, today)
+
+
+async def activity(session: AsyncSession, user_id: UUID) -> list[DayXp]:
+    profile = await get_profile(session, user_id)
+    first = local_today(profile.timezone) - timedelta(days=ACTIVITY_DAYS - 1)
+    start, _ = day_bounds(first, profile.timezone)
+    local_day = func.date(func.timezone(profile.timezone, XpEvent.created_at))
+    stmt = (
+        select(local_day, func.sum(XpEvent.amount))
+        .where(XpEvent.user_id == user_id, XpEvent.created_at >= start)
+        .group_by(local_day)
+    )
+    totals = dict((await session.execute(stmt)).all())
+    days = [first + timedelta(days=offset) for offset in range(ACTIVITY_DAYS)]
+    return [DayXp(day=day, xp=totals.get(day, 0)) for day in days]
+
+
+async def league(session: AsyncSession, user_id: UUID) -> LeagueOut:
+    start = week_start()
+    weekly = (
+        select(XpEvent.user_id, func.sum(XpEvent.amount).label("xp"))
+        .where(XpEvent.created_at >= start)
+        .group_by(XpEvent.user_id)
+        .subquery()
+    )
+    stmt = (
+        select(Profile.id, Profile.handle, Profile.display_name, weekly.c.xp)
+        .join(weekly, weekly.c.user_id == Profile.id)
+        .order_by(weekly.c.xp.desc(), Profile.id)
+        .limit(LEAGUE_SIZE)
+    )
+    entries = [
+        LeagueEntry(rank=rank, user_id=profile_id, handle=handle, display_name=name, xp=xp)
+        for rank, (profile_id, handle, name, xp) in enumerate((await session.execute(stmt)).all(), start=1)
+    ]
+    me = next((entry for entry in entries if entry.user_id == user_id), None)
+    if me is None:
+        profile = await get_profile(session, user_id)
+        xp = await session.scalar(select(weekly.c.xp).where(weekly.c.user_id == user_id)) or 0
+        ahead = await session.scalar(select(func.count()).select_from(weekly).where(weekly.c.xp > xp)) or 0
+        me = LeagueEntry(rank=ahead + 1, user_id=user_id, handle=profile.handle, display_name=profile.display_name, xp=xp)
+    return LeagueOut(ends_at=start + timedelta(days=7), entries=entries, me=me)

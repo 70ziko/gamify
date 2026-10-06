@@ -122,10 +122,10 @@ queued writes safe to retry.
 
 1. Scaffold monorepo (done).
 2. Schema + XP ledger (done, API side).
-3. Auth end-to-end: JWT verification done in the API; app sign-in pending.
-4. XP vertical slice in the app: roadmap → step → complete → animated XP bar.
-5. AI roadmap drafts and step suggestions (done, API side).
-6. Streaks and daily quests (done, API side).
-7. Marketplace: publish, browse, install, review (done, API side).
-8. Leaderboards: leagues, weekly pg_cron rollover, Realtime.
+3. Auth end-to-end (done).
+4. XP vertical slice in the app: roadmap → step → complete → XP bar (done; animation pending).
+5. AI roadmap drafts and step suggestions (wired in the app; prompts to be designed).
+6. Streaks and daily quests (done).
+7. Marketplace: publish, browse, install, review (done).
+8. Leaderboards: weekly XP board done; leagues, weekly pg_cron rollover, Realtime pending.
 9. Ops: Sentry, PostHog, EAS Build/Update, TestFlight, API hosting.

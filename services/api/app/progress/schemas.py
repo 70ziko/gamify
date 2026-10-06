@@ -1,3 +1,6 @@
+from datetime import date, datetime
+from uuid import UUID
+
 from pydantic import BaseModel
 
 from app.progress.levels import LevelInfo
@@ -35,3 +38,22 @@ class CompletionOut(BaseModel):
     level: LevelInfo
     streak: StreakOut
     quests_completed: list[QuestOut]
+
+
+class DayXp(BaseModel):
+    day: date
+    xp: int
+
+
+class LeagueEntry(BaseModel):
+    rank: int
+    user_id: UUID
+    handle: str | None
+    display_name: str | None
+    xp: int
+
+
+class LeagueOut(BaseModel):
+    ends_at: datetime
+    entries: list[LeagueEntry]
+    me: LeagueEntry
