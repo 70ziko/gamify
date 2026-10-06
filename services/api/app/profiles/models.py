@@ -20,4 +20,5 @@ class Profile(Base):
     reminder_time: Mapped[time | None]
     timezone: Mapped[str]
     plan: Mapped[str]
+    league_opt_in: Mapped[bool]
     created_at: Mapped[datetime]

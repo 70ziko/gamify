@@ -17,7 +17,7 @@ leaderboards layered on top.
 | Auth + database | Supabase: Auth (JWTs signed with ES256) and Postgres |
 | API | FastAPI (Python 3.12), SQLAlchemy 2 async + asyncpg: the app's only data API |
 | AI | Vendor-neutral through Pydantic AI; models are `<provider>:<model>` config strings |
-| Jobs | pg_cron (weekly league rollover, later) |
+| Jobs | None: streaks and league rollover are evaluated lazily by the API |
 | Push | Expo Notifications |
 | Payments | RevenueCat (later — subscriptions + paid marketplace listings) |
 | Builds/OTA | EAS Build + EAS Update |
@@ -69,6 +69,13 @@ Every completed step emits an XP event. Everything else composes on top.
 - **Daily quests** — a code catalog (`app/progress/quests.py`) granted in the same
   transaction as the step that completes them.
 - **Levels** — `xpForLevel` in `@gamify/shared`, mirrored in `app/progress/levels.py`.
+- **Leagues** — weekly cohorts of up to 20 per tier (`leagues`, `league_members`).
+  A user joins a cohort in their tier with their first XP of the week (Monday
+  00:00 UTC), unless `profiles.league_opt_in` is off. The first time a member is
+  seen after the week ends, the API closes the cohort and stores each member's
+  `outcome`: the top 7 move up and the bottom 5 down, scaled to the cohort's size
+  (`app/progress/leagues.py`). A tier is the last cohort's tier plus its outcome.
+  Weekly XP and rank stay derived from `xp_events`. No cron job.
 
 ## Marketplace
 
@@ -127,5 +134,5 @@ queued writes safe to retry.
 5. AI roadmap drafts and step suggestions (wired in the app; prompts to be designed).
 6. Streaks and daily quests (done).
 7. Marketplace: publish, browse, install, review (done).
-8. Leaderboards: weekly XP board done; leagues, weekly pg_cron rollover, Realtime pending.
+8. Leagues: tiered weekly cohorts with lazy rollover (done); Realtime pending.
 9. Ops: Sentry, PostHog, EAS Build/Update, TestFlight, API hosting.

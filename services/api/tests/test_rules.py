@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 import pytest
 from pydantic import ValidationError
 
+from app.progress.leagues import TIERS, next_tier, outcome_for, zones
 from app.progress.levels import level_from_xp, xp_for_level
 from app.progress.models import Streak
 from app.progress.quests import QUESTS
@@ -64,6 +65,14 @@ def test_local_day_follows_user_timezone() -> None:
 def test_quest_progress_is_capped_at_target() -> None:
     progress = [quest_progress(quest, 3) for quest in QUESTS]
     assert [(q.progress, q.done) for q in progress] == [(1, True), (2, True), (3, False)]
+
+
+def test_league_zones_scale_with_cohort_size() -> None:
+    assert [zones(1, size) for size in (20, 10, 4, 2)] == [(7, 5), (3, 2), (1, 1), (0, 0)]
+    assert (zones(0, 20), zones(len(TIERS) - 1, 20)) == ((7, 0), (0, 5))
+    assert [outcome_for(1, rank, 20, 100) for rank in (7, 8, 15, 16)] == ["promoted", "stayed", "stayed", "demoted"]
+    assert outcome_for(1, 1, 20, 0) == "stayed"
+    assert [next_tier(1, outcome) for outcome in ("promoted", "stayed", "demoted")] == [2, 1, 0]
 
 
 def test_quiz_answer_must_index_options() -> None:

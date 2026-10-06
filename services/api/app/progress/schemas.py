@@ -54,6 +54,10 @@ class LeagueEntry(BaseModel):
 
 
 class LeagueOut(BaseModel):
+    tier: int
+    tier_name: str
     ends_at: datetime
+    promote: int
+    demote: int
     entries: list[LeagueEntry]
-    me: LeagueEntry
+    me: LeagueEntry | None

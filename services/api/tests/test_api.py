@@ -1,5 +1,7 @@
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -10,6 +12,9 @@ from app.ai.flows.roadmap_draft import outline_agent, unit_agent
 from app.ai.flows.step_suggestions import suggestion_agent
 from app.ai.runner import FREE_DAILY_LIMITS
 from app.auth import AuthUser
+from app.progress.leagues import LEAGUE_SIZE
+from app.progress.models import League, LeagueMember, XpEvent
+from app.progress.service import week_start
 from tests.test_ai_flows import OUTLINE, returning
 
 pytestmark = pytest.mark.db
@@ -135,6 +140,7 @@ async def test_weekly_league_and_activity(
     assert (len(activity), activity[-1]["xp"], activity[0]["xp"]) == (28, 50, 0)
 
     act_as(await make_user("bob"))
+    assert (await client.get("/me/league")).json()["me"] is None
     first, second = (await create_roadmap(client))["units"][0]["steps"]
     for step in (first, second):
         await client.post(f"/steps/{step['id']}/complete")
@@ -142,10 +148,75 @@ async def test_weekly_league_and_activity(
 
     act_as(alice)
     league = (await client.get("/me/league")).json()
-    assert (league["me"]["xp"], bob["xp"]) == (50, 120)
+    assert (league["tier_name"], league["me"]["xp"], bob["xp"]) == ("Quartz", 50, 120)
     assert league["me"]["rank"] > bob["rank"]
     ranked = [entry["display_name"] for entry in league["entries"] if entry["display_name"] in ("alice", "bob")]
     assert ranked == ["bob", "alice"]
+
+
+async def test_league_rollover(
+    client: AsyncClient,
+    make_user: Callable[..., Any],
+    act_as: Callable[[AuthUser], None],
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    ann, ben, cat, dan = [await make_user(name) for name in ("ann", "ben", "cat", "dan")]
+    last_week = week_start() - timedelta(days=7)
+    async with factory.begin() as session:
+        league = League(id=uuid4(), week_start=last_week.date(), tier=1)
+        session.add(league)
+        await session.flush()
+        for user, xp in ((ann, 300), (ben, 200), (cat, 100), (dan, 50)):
+            session.add(LeagueMember(league_id=league.id, week_start=last_week.date(), user_id=user.id))
+            session.add(
+                XpEvent(user_id=user.id, amount=xp, source="adjustment", idempotency_key="seed", created_at=last_week)
+            )
+
+    act_as(ann)
+    assert ((await client.get("/me/league")).json()["tier_name"]) == "Amethyst"
+    act_as(dan)
+    assert ((await client.get("/me/league")).json()["tier_name"]) == "Quartz"
+    async with factory.begin() as session:
+        outcomes = await session.execute(
+            text("select user_id, outcome from league_members where league_id = :id"), {"id": league.id}
+        )
+    assert dict(outcomes.all()) == {ann.id: "promoted", ben.id: "stayed", cat.id: "stayed", dan.id: "demoted"}
+
+    act_as(ann)
+    step = (await create_roadmap(client))["units"][0]["steps"][0]
+    await client.post(f"/steps/{step['id']}/complete")
+    current = (await client.get("/me/league")).json()
+    assert (current["tier"], current["me"]["xp"], current["promote"]) == (2, 50, 0)
+
+
+async def test_full_league_opens_a_new_cohort(
+    client: AsyncClient,
+    alice: AuthUser,
+    make_user: Callable[..., Any],
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    members = [await make_user(f"member{index}") for index in range(LEAGUE_SIZE)]
+    week = week_start().date()
+    async with factory.begin() as session:
+        full = League(id=uuid4(), week_start=week, tier=0)
+        session.add(full)
+        await session.flush()
+        session.add_all(LeagueMember(league_id=full.id, week_start=week, user_id=member.id) for member in members)
+
+    step = (await create_roadmap(client))["units"][0]["steps"][0]
+    await client.post(f"/steps/{step['id']}/complete")
+    entries = (await client.get("/me/league")).json()["entries"]
+    assert str(alice.id) in {entry["user_id"] for entry in entries}
+    assert not {entry["user_id"] for entry in entries} & {str(member.id) for member in members}
+
+
+async def test_league_opt_out(client: AsyncClient, alice: AuthUser) -> None:
+    assert (await client.patch("/me", json={"league_opt_in": False})).json()["league_opt_in"] is False
+    assert (await client.patch("/me", json={"league_opt_in": None})).status_code == 422
+    step = (await create_roadmap(client))["units"][0]["steps"][0]
+    await client.post(f"/steps/{step['id']}/complete")
+    league = (await client.get("/me/league")).json()
+    assert (league["me"], league["entries"]) == (None, [])
 
 
 async def test_marketplace_publish_install_review(

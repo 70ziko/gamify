@@ -418,14 +418,22 @@ export interface components {
         };
         /** LeagueOut */
         LeagueOut: {
+            /** Tier */
+            tier: number;
+            /** Tier Name */
+            tier_name: string;
             /**
              * Ends At
              * Format: date-time
              */
             ends_at: string;
+            /** Promote */
+            promote: number;
+            /** Demote */
+            demote: number;
             /** Entries */
             entries: components["schemas"]["LeagueEntry"][];
-            me: components["schemas"]["LeagueEntry"];
+            me: components["schemas"]["LeagueEntry"] | null;
         };
         /** LevelInfo */
         LevelInfo: {
@@ -589,6 +597,8 @@ export interface components {
              * @enum {string}
              */
             plan: "free" | "plus";
+            /** League Opt In */
+            league_opt_in: boolean;
         };
         /** ProfileUpdate */
         ProfileUpdate: {
@@ -606,6 +616,8 @@ export interface components {
             reminder_time?: string | null;
             /** Timezone */
             timezone?: string | null;
+            /** League Opt In */
+            league_opt_in?: boolean | null;
         };
         /** ProgressOut */
         ProgressOut: {

@@ -1,7 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -523,7 +523,7 @@ function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, on
             <GText style={{ fontSize: 14 }}>🔥</GText><GText weight={700} style={{ color: p.streak, fontSize: 13 }}>{streak.current}</GText>
           </Pressable>
           <Pressable accessibilityLabel="Your league" onPress={() => onSelect('league')} style={[styles.headerPill, { backgroundColor: p.surface, borderColor: p.border }]}>
-            <Icon name="trophy" color={p.success} size={15} /><GText weight={700} style={{ color: p.success, fontSize: 13 }}>{league.data ? `#${league.data.me.rank}` : '–'}</GText>
+            <Icon name="trophy" color={p.success} size={15} /><GText weight={700} style={{ color: p.success, fontSize: 13 }}>{league.data?.me ? `#${league.data.me.rank}` : '–'}</GText>
           </Pressable>
           <Pressable accessibilityLabel="Your profile" onPress={() => onSelect('profile')}>
             <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.avatarSmall}>
@@ -1504,29 +1504,44 @@ function LeagueScreen({ mode, onSelect }: { mode: ThemeMode; onSelect: (tab: Mai
       </MainScaffold>
     );
   }
-  const { entries, me, ends_at } = league.data;
+  const { tier_name, entries, me, ends_at, promote, demote } = league.data;
   const daysLeft = Math.max(1, Math.ceil((new Date(ends_at).getTime() - now) / 86_400_000));
-  const above = entries.find((entry) => entry.rank === me.rank - 1);
-  const rows = entries.some((entry) => entry.user_id === me.user_id) ? entries : [...entries, me];
+  const above = me ? entries.find((entry) => entry.rank === me.rank - 1) : undefined;
+  const chase = me && above ? `${above.xp - me.xp} XP from #${above.rank}` : null;
+  const timeLeft = `${plural(daysLeft, 'day')} left`;
   return (
     <MainScaffold mode={mode} active="league" onSelect={onSelect}>
-      <View style={styles.leagueHero}><LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.trophyBadge}><Icon name="trophy" color={p.bg} size={36} /></LinearGradient><GText weight={800} style={{ color: p.ink, fontSize: 21, marginTop: 10 }}>Weekly league</GText><GText style={{ color: p.muted, fontSize: 12.5, marginTop: 7 }}>{`${plural(daysLeft, 'day')} left · resets Monday`}</GText></View>
+      <View style={styles.leagueHero}><LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.trophyBadge}><Icon name="trophy" color={p.bg} size={36} /></LinearGradient><GText weight={800} style={{ color: p.ink, fontSize: 21, marginTop: 10 }}>{`${tier_name} League`}</GText><GText style={{ color: p.muted, fontSize: 12.5, marginTop: 7 }}>{promote > 0 ? `Top ${promote} advance · ${timeLeft}` : `${timeLeft} · resets Monday`}</GText></View>
       <View style={{ gap: 8, marginTop: 14 }}>
-        {entries.length === 0 ? <GText style={{ color: p.muted, fontSize: 12.5, textAlign: 'center' }}>No XP earned yet this week. Finish a step to take the top spot.</GText> : null}
-        {rows.map((entry) => {
-          const you = entry.user_id === me.user_id;
+        {me ? null : <GText style={{ color: p.muted, fontSize: 12.5, textAlign: 'center' }}>{`Finish a step to join this week's ${tier_name} League.`}</GText>}
+        {entries.map((entry) => {
+          const you = entry.user_id === me?.user_id;
           const podium = [p.accent, p.success, p.primary][entry.rank - 1];
           return (
-            <Card key={entry.user_id} p={p} style={[styles.playerRow, you ? { borderColor: p.primary, borderWidth: 1.5 } : null]}>
-              <GText weight={800} style={{ color: entry.rank === 1 ? p.streak : p.dim, width: 20 }}>{entry.rank}</GText>
-              <View style={[styles.playerAvatar, { backgroundColor: podium ?? p.raised }]}><GText weight={800} style={{ color: podium ? p.bg : p.ink, fontSize: 11 }}>{initial(entry)}</GText></View>
-              <View style={{ flex: 1 }}><GText weight={you ? 800 : 700} style={{ color: p.ink, fontSize: 13 }}>{you ? 'You' : nameOf(entry)}</GText>{you && above ? <GText weight={600} style={{ color: p.primaryText, fontSize: 10 }}>{`${above.xp - me.xp} XP from #${above.rank}`}</GText> : null}</View>
-              <GText weight={700} style={{ color: you ? p.primaryText : p.muted, fontSize: 12 }}>{entry.xp.toLocaleString('en-US')}</GText>
-            </Card>
+            <Fragment key={entry.user_id}>
+              {entry.rank === entries.length - demote + 1 ? <ZoneLine p={p} label="DEMOTION LINE" color={p.dim} /> : null}
+              <Card p={p} style={[styles.playerRow, you ? { borderColor: p.primary, borderWidth: 1.5 } : null]}>
+                <GText weight={800} style={{ color: entry.rank === 1 ? p.streak : p.dim, width: 20 }}>{entry.rank}</GText>
+                <View style={[styles.playerAvatar, { backgroundColor: podium ?? p.raised }]}><GText weight={800} style={{ color: podium ? p.bg : p.ink, fontSize: 11 }}>{initial(entry)}</GText></View>
+                <View style={{ flex: 1 }}><GText weight={you ? 800 : 700} style={{ color: p.ink, fontSize: 13 }}>{you ? 'You' : nameOf(entry)}</GText>{you && chase ? <GText weight={600} style={{ color: p.primaryText, fontSize: 10 }}>{chase}</GText> : null}</View>
+                <GText weight={700} style={{ color: you ? p.primaryText : p.muted, fontSize: 12 }}>{entry.xp.toLocaleString('en-US')}</GText>
+              </Card>
+              {entry.rank === promote ? <ZoneLine p={p} label="PROMOTION LINE" color={p.success} /> : null}
+            </Fragment>
           );
         })}
       </View>
     </MainScaffold>
+  );
+}
+
+function ZoneLine({ p, label, color }: { p: Palette; label: string; color: string }) {
+  return (
+    <View style={[styles.row, { gap: 10, marginVertical: 2 }]}>
+      <View style={[styles.zoneRule, { backgroundColor: p.border }]} />
+      <GText weight={700} style={{ color, fontSize: 10.5, letterSpacing: 0.7 }}>{label}</GText>
+      <View style={[styles.zoneRule, { backgroundColor: p.border }]} />
+    </View>
   );
 }
 
@@ -1815,6 +1830,7 @@ const styles = StyleSheet.create({
   leagueHero: { alignItems: 'center', marginTop: 4, marginBottom: 12 },
   trophyBadge: { width: 78, height: 78, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
   playerRow: { paddingHorizontal: 14, minHeight: 58, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  zoneRule: { flex: 1, height: 1 },
   playerAvatar: { width: 35, height: 35, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   streakSheet: { borderTopWidth: 1, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 22, paddingBottom: 24, paddingTop: 16 },
   bigFlame: { fontSize: 63, textAlign: 'center', marginBottom: 12 },

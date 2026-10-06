@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Mobile uses supabase-js for sign-in only.** Every read and write goes to the API through `src/lib/api.ts`. Nativewind and Zustand are not installed. `@expo/ui` is installed but unused.
 - **Versions.** `apps/mobile/package.json` pins Expo SDK 57, React Native 0.86, React 19.2, and TypeScript ~6.0. SDK 57 may postdate your training data, so check https://docs.expo.dev/versions/v57.0.0/ before using Expo APIs.
-- **Not built yet:** league tiers and promotion (`GET /me/league` is a plain weekly XP board), follows, achievements, gems, payments, and push reminders (`reminder_time` is stored only). AI prompts are placeholders until the flows are designed.
+- **Not built yet:** follows, achievements, gems, payments, push reminders (`reminder_time` is stored only), and the Settings toggle for `league_opt_in` (API only). AI prompts are placeholders until the flows are designed.
 - **`@gamify/shared`** holds only the XP curve. Nothing imports it yet. It ships raw TS (`main: src/index.ts`, no build step). The app's API types are generated from `/openapi.json` into `src/lib/api-types.ts`.
 
 ## Commands beyond AGENTS.md
@@ -50,7 +50,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Data model invariants
 
-- `xp_events` is the ledger, written only by the API through `progress.service.award` with a per-user unique `idempotency_key`. XP totals, levels, step completion, quest progress, and leaderboards are derived from it and never stored. The stored exceptions are `streaks` (advanced on completion, evaluated lazily) and the listing aggregates (`installs`, `rating_avg`, `rating_count`).
+- `xp_events` is the ledger, written only by the API through `progress.service.award` with a per-user unique `idempotency_key`. XP totals, levels, step completion, quest progress, and leaderboards are derived from it and never stored. The stored exceptions are `streaks` (advanced on completion, evaluated lazily), `league_members.outcome` (frozen when a cohort closes), and the listing aggregates (`installs`, `rating_avg`, `rating_count`).
 - Step XP comes from `progress.xp.step_xp(minutes)`. `StepDraft.xp` is a computed field, so client- or AI-supplied XP is ignored.
 - The level curve is `xpForLevel` / `levelFromXp` in `packages/shared/src/index.ts`, mirrored by hand in `app/progress/levels.py`.
 - Installing a listing materializes its latest `listing_versions.content` (a `RoadmapDraft`) into the user's own roadmap with `source_listing_id` set. Private progress never touches the template.
@@ -58,7 +58,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Gotchas
 
-- **No Data API access, on purpose.** `0001_init.sql` enables RLS with no policies and revokes all table privileges from `anon` / `authenticated`. supabase-js can only sign in. Data goes through the API, which connects as the table owner. Realtime for leagues will need explicit `select` grants and policies.
+- **No Data API access, on purpose.** `0001_init.sql` enables RLS with no policies and revokes all table privileges from `anon` / `authenticated`. supabase-js can only sign in. Data goes through the API, which connects as the table owner. That revoke covered only the tables that existed then: default privileges in `public` grant every new table to `anon` / `authenticated`, so each migration that adds a table must revoke it (as `0002_leagues.sql` does). Realtime for leagues will need explicit `select` grants and policies.
 - **Local signing key.** `supabase/config.toml` sets `signing_keys_path = "./signing_keys.json"`, which is gitignored and must exist before `pnpm db:start`. Create it with `echo '[]' > supabase/signing_keys.json && pnpm exec supabase gen signing-key --algorithm ES256 --yes`.
 - **Migration names.** `supabase migration new <name>` creates `<timestamp>_<name>.sql`, and `pnpm db:diff -f <name>` also writes a new migration file. Rename CLI-created files to the next `000N_` prefix to keep the numbered order. `supabase/seed.sql` adds three official listings by a `gamify` user. It runs on `pnpm db:reset` and is idempotent, so it can also be piped into `psql`.
 - **API env loading.** `Settings` reads only the process environment. `pnpm api` loads `services/api/.env` through `uv run --env-file .env`. Run other commands the same way, or the defaults (local Supabase) apply and no AI key is set.

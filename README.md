@@ -156,5 +156,4 @@ then try `--tunnel` (see [Run on your phone](#run-on-your-phone)).
 ## Next steps
 
 See the build sequence in [ARCHITECTURE.md](./ARCHITECTURE.md#build-sequence).
-Next up: the AI flows' prompt design, league tiers with weekly rollover, achievements,
-and push reminders.
+Next up: the AI flows' prompt design, achievements, and push reminders.
