@@ -1,0 +1,35 @@
+{
+  "screenshots": 8,
+  "mainImages": 13,
+  "viewportChecks": [
+    {
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "overflow": false
+    }
+  ],
+  "enlargedOverflow": false,
+  "modalOpened": true,
+  "modalClosed": true,
+  "lightMode": "light",
+  "evidenceOpened": true,
+  "galleryMoved": true,
+  "offline": {
+    "images": 13,
+    "externalRequests": [],
+    "nonEmbeddedLinks": [],
+    "zoom": true
+  },
+  "errors": []
+}

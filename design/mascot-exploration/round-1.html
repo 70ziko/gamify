@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gamify · Mascot exploration</title>
+<style>
+@font-face{font-family:Jakarta;src:url('../../apps/mobile/assets/fonts/PlusJakartaSans-Regular.ttf');font-weight:400;font-display:swap}
+@font-face{font-family:Jakarta;src:url('../../apps/mobile/assets/fonts/PlusJakartaSans-SemiBold.ttf');font-weight:600;font-display:swap}
+@font-face{font-family:Jakarta;src:url('../../apps/mobile/assets/fonts/PlusJakartaSans-ExtraBold.ttf');font-weight:800;font-display:swap}
+:root{--bg:#231A2B;--surface:#30243A;--raised:#3A2C45;--line:#42344D;--ink:#F2ECF6;--muted:#AEA1BC;--purple:#B79BFF;--peach:#F4A98C;--gold:#F7D699;--warm:#3B2832;--warm-line:#5C3F47;--accent-ink:#F5B59D;--subtle:#261D30;--shadow:#C9705F}
+body[data-theme="light"]{--bg:#FAF6F8;--surface:#fff;--raised:#F0E9F2;--line:#EBE0EA;--ink:#2C2135;--muted:#6E6379;--purple:#7B5CE6;--peach:#EF927B;--warm:#FFF1EA;--warm-line:#F6D4C6;--accent-ink:#BF5741;--subtle:#F0E9F2;--shadow:#C9604A}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.7 Jakarta,system-ui,sans-serif}
+a{color:var(--purple);text-underline-offset:4px}
+a:hover{opacity:.85}
+button{font:600 12px Jakarta,system-ui;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(--peach);outline-offset:4px}
+.shell{max-width:1220px;padding:0 32px;margin:auto}
+.topbar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
+.topbar .shell{min-height:76px;display:flex;align-items:center;gap:24px}
+.wordmark{font-size:21px;font-weight:800;letter-spacing:-1px;color:var(--ink);text-decoration:none}
+.wordmark span{color:var(--peach)}
+nav{display:flex;gap:20px;margin-left:auto}
+nav a{font-size:12px;text-decoration:none;color:var(--muted)}
+.theme-button,.size-button,.zoom-button{padding:9px 13px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--ink)}
+.theme-button{white-space:nowrap}
+.hero{display:grid;grid-template-columns:1.4fr .8fr;align-items:center;gap:30px;padding:70px 0 55px}
+.eyebrow{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--peach)}
+h1{font-weight:800;font-size:clamp(32px,4.5vw,58px);letter-spacing:-2px;line-height:1.13;max-width:770px;margin:18px 0 24px}
+h1 span{color:var(--gold)}
+body[data-theme="light"] h1 span{color:#AC722F}
+.lead{max-width:680px;font-size:16px;color:var(--muted);line-height:1.8}
+.hero-art{position:relative;background:radial-gradient(ellipse,rgba(183,155,255,.1),transparent 70%);text-align:center}
+.hero-art img{max-width:100%;width:350px;display:block;margin:auto}
+.hero-art figcaption{font-size:11px;color:var(--muted)}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+.action-link{padding:12px 19px;border-radius:16px;background:var(--peach);color:#231A2B;text-decoration:none;font-weight:800;font-size:12px;box-shadow:0 4px 0 var(--shadow)}
+.action-link.secondary{background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:none}
+.note{border:1px solid var(--line);border-radius:18px;padding:16px 20px;background:var(--surface);color:var(--muted);font-size:12px}
+.note strong{color:var(--ink)}
+section{padding:45px 0;border-top:1px solid var(--line)}
+.section-head{display:flex;align-items:end;justify-content:space-between;gap:26px;margin-bottom:25px}
+h2{font-size:29px;line-height:1.25;letter-spacing:-.9px;font-weight:800;margin:9px 0}
+.section-head p{max-width:520px;margin:0;color:var(--muted);font-size:13px}
+.label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.4px;color:var(--purple)}
+.observations{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.observation,.rule{padding:22px;border-radius:20px;border:1px solid var(--line);background:var(--surface)}
+.observation h3,.rule h3{font-size:16px;line-height:1.35;margin:0 0 12px;font-weight:800}
+.observation p,.rule p{margin:0 0 14px;color:var(--muted);font-size:13px}
+.source{font-size:10px;color:var(--muted)}
+.source a{color:var(--purple)}
+.palette{display:flex;gap:10px;margin:22px 0;flex-wrap:wrap}
+.swatch{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--muted);padding:9px 13px;border:1px solid var(--line);border-radius:999px}
+.swatch i{display:block;width:19px;height:19px;border-radius:7px;border:1px solid rgba(255,255,255,.25)}
+.figure{margin:0;border:1px solid var(--line);border-radius:23px;overflow:hidden;background:var(--surface)}
+.figure>a{display:block;line-height:0}
+.figure img{width:100%;height:auto;display:block}
+.figure figcaption{font-size:11px;color:var(--muted);padding:16px 20px;line-height:1.7}
+.style-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:17px}
+.style-choice{border:1px solid var(--line);border-radius:18px;padding:18px;background:var(--surface)}
+.style-choice.active{border-color:var(--purple)}
+.style-choice h3{font-size:14px;margin:5px 0 10px;font-weight:800}
+.style-choice p{font-size:12px;line-height:1.7;color:var(--muted);margin:0}
+.style-choice .status{font-size:10px;color:var(--peach);font-weight:600}
+.candidates{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
+.candidate{border:1px solid var(--line);border-radius:22px;overflow:hidden;background:var(--surface);padding:20px;min-width:0}
+.candidate:first-child{border-color:var(--purple)}
+.candidate-top{display:flex;justify-content:space-between;align-items:center}
+.number{font-size:13px;color:var(--purple);font-weight:800}
+.tag{font-size:9px;letter-spacing:.3px;color:var(--accent-ink);background:var(--warm);border-radius:999px;padding:4px 9px}
+.candidate h3{font-size:22px;font-weight:800;letter-spacing:-.5px;margin:14px 0 5px}
+.candidate .sub{font-size:11px;line-height:1.6;color:var(--muted);margin:0 0 16px;min-height:35px}
+.art-link{display:block;line-height:0;margin:0 -20px}
+.art-link img{display:block;width:100%;height:auto}
+.candidate p{font-size:12px;color:var(--muted);line-height:1.8}
+.candidate .credit{font-size:9px;opacity:.85}
+.trade{border-top:1px solid var(--line);padding-top:14px}
+.trade strong{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--peach)}
+.trade p{margin:4px 0 15px}
+.comparison{overflow-x:auto;margin-top:25px}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:640px}
+th{text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:1px}
+td,th{padding:15px 18px;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{width:22%}
+td:nth-child(2){width:28%;color:var(--muted)}
+td:nth-child(3){color:var(--muted)}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:22px}
+.rule .number{margin-bottom:13px;display:block}
+.review-box{margin-top:22px;border:1px solid var(--line);border-radius:22px;padding:24px;background:var(--surface)}
+.controls{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap;margin-bottom:24px}
+.control-buttons{display:flex;gap:6px;flex-wrap:wrap}
+.size-button[aria-pressed="true"]{background:var(--purple);color:var(--bg);border-color:var(--purple)}
+.preview-row{display:flex;gap:15px;flex-wrap:wrap}
+.preview-tile{border:1px solid var(--line);border-radius:18px;background:var(--subtle);flex:1;min-width:150px;min-height:215px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:18px}
+.preview-tile.on-dark{background:#231A2B;color:#F2ECF6}
+.preview-tile.on-light{background:#FAF6F8;color:#2C2135}
+.preview-tile.on-warm-dark{background:#3B2832;color:#F2ECF6}
+.preview-tile.on-warm-light{background:#FFF1EA;color:#2C2135}
+.preview-tile .preview-label{font-size:10px;line-height:1.4;text-align:center}
+.preview-tile .image-stage{height:132px;display:flex;align-items:center;justify-content:center}
+.size-art{display:block;width:50px;height:50px;object-fit:contain}
+.preview-tile .caption{font-size:10px;opacity:.7}
+.layout-examples{display:flex;gap:24px;flex-wrap:wrap;margin-top:26px;align-items:flex-start}
+.phone-study{background:var(--bg);border:1px solid var(--line);border-radius:23px;padding:14px;flex-shrink:0;max-width:100%}
+.phone-study.narrow{width:320px}
+.phone-study.regular{width:390px}
+.phone-study .today-title{display:flex;align-items:center;justify-content:space-between;margin:7px 0 16px}
+.today-title strong{font-size:24px;font-weight:800;letter-spacing:-.5px}
+.today-title span{font-size:10px;color:var(--muted)}
+.today-study{display:flex;gap:14px;align-items:center;border:1px solid var(--warm-line);border-radius:20px;padding:12px;background:var(--warm)}
+.today-study>img{flex-shrink:0;object-fit:contain;display:block}
+.narrow .today-study>img{width:50px;height:50px}
+.regular .today-study>img{width:120px;height:120px}
+.today-study .coach{min-width:0;flex:1}
+.today-study .greeting{color:var(--accent-ink);font-size:10px;font-weight:600}
+.today-study .copy{font-size:14px;font-weight:800;line-height:1.5;margin:6px 0 12px}
+.lesson{font-size:10px;color:var(--muted);border-top:1px solid var(--warm-line);padding-top:8px}
+.start{display:inline-block;background:var(--peach);color:#231A2B;padding:6px 15px;border-radius:10px;font-size:11px;font-weight:800;margin-top:6px;box-shadow:0 3px 0 var(--shadow)}
+.study-label{font-size:10px;color:var(--muted);margin:14px 0 0}
+.review-box .source{margin-top:16px}
+.reusable{background:var(--subtle);border-radius:18px;padding:23px;margin-top:22px;color:var(--muted);font-size:13px;line-height:1.9}
+details{border:1px solid var(--line);border-radius:18px;padding:18px 22px;margin-top:14px;background:var(--surface)}
+summary{cursor:pointer;font-weight:600;font-size:13px}
+details p,details li{font-size:12px;color:var(--muted)}
+.foot{display:flex;gap:20px;justify-content:space-between;align-items:center;padding:28px 0 50px;font-size:11px;color:var(--muted)}
+.foot div{display:flex;gap:20px;flex-wrap:wrap}
+.zoom-button{margin:12px 0}
+@media(max-width:980px){.hero{grid-template-columns:1.3fr .7fr}.candidates{grid-template-columns:repeat(2,1fr)}.observations,.rules{grid-template-columns:1fr}.style-summary{grid-template-columns:repeat(2,1fr)}nav{gap:10px}nav a{font-size:10px}}
+@media(max-width:640px){.shell{padding:0 18px}.topbar .shell{gap:12px;min-height:66px}nav{display:none}.theme-button{margin-left:auto}.hero{display:flex;flex-direction:column;padding:40px 0 30px;gap:0}.hero-art{order:-1}.hero-art img{width:190px}.hero-art figcaption{display:none}h1{font-size:37px;letter-spacing:-1.4px}.lead{font-size:14px}.section-head{display:block}.section-head p{margin-top:12px}.candidates{grid-template-columns:1fr}.style-summary{grid-template-columns:1fr 1fr}section{padding:32px 0}h2{font-size:25px}.phone-study.regular{width:100%}.regular .today-study>img{width:96px;height:96px}.foot{display:block}.foot div{margin-top:16px}.review-box{padding:17px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body data-theme="dark">
+<header class="topbar"><div class="shell">
+<a class="wordmark" href="#top">gamify<span> ✦</span></a>
+<nav aria-label="Sections"><a href="#foundation">App evidence</a><a href="#styles">Styles</a><a href="#mascots">Mascots</a><a href="#family">Course cast</a><a href="#size-review">Size review</a></nav>
+<button class="theme-button" id="theme-toggle" type="button" aria-pressed="false">View light theme</button>
+</div></header>
+<main class="shell">
+<div class="hero" id="top">
+ <div><span class="eyebrow">Mascot exploration · 6 October 2026</span>
+ <h1>A companion for<br><span>the next small step.</span></h1>
+ <p class="lead">My proposed direction is <strong>Questling in soft shaded 2D</strong>, with Lantern Moth as the strongest alternative. Five characters and four rendering styles make the decision concrete. A shared drawing grammar gives future course characters room to be different while belonging to the same app.</p>
+ <div class="actions"><a class="action-link" href="#mascots">Compare the five mascots</a><a class="action-link secondary" href="decision-guide.md">Read the detailed guide</a></div>
+ </div>
+ <figure class="hero-art"><img src="review/04-questling-neutral.png" alt="Proposed gold Questling with cream face and lavender four-point badge"><figcaption>Generated neutral concept · working identity</figcaption></figure>
+</div>
+<p class="note"><strong>Decision status:</strong> exploration, ready for your assessment. The ranking is my design judgment, not measured user preference. The generated boards show possibilities; they are not production identity sheets. The application source and existing artwork remain unchanged.</p>
+<section id="foundation">
+ <div class="section-head"><div><span class="label">01 · Primary observations from the repository</span><h2>Warm, compact, encouraging.</h2></div><p>The active product is <code>GamifyApp</code>. Its palette, geometry, voice and responsive mascot slot set the design constraints.</p></div>
+ <div class="observations">
+ <article class="observation"><h3>Anything can become a quest</h3><p>Habits, skills and side projects become roadmaps with steps, exercises and earned XP. Categories span coding, fitness, music, mindfulness and more.</p><div class="source">Primary observation · <a href="../../apps/mobile/src/components/gamify-app.tsx">welcome, line 317</a>; <a href="../../apps/mobile/src/components/gamify-app.tsx">categories, line 97</a>; <a href="../../services/api/app/roadmaps/schemas.py">roadmap schema, line 61</a></div></article>
+ <article class="observation"><h3>Encouragement over pressure</h3><p>Home says “Fresh start. One step is plenty.” Streak recovery says “You missed yesterday. It happens.” My inferred mascot role is a reassuring peer and curious companion.</p><div class="source">Primary observation · <a href="../../apps/mobile/src/components/gamify-app.tsx">coach copy, line 475</a>; <a href="../../apps/mobile/src/components/gamify-app.tsx">recovery copy, line 1550</a></div></article>
+ <article class="observation"><h3>The face must work at 50 px</h3><p>One explicit mascot placeholder appears in Home. Its nominal 96/120 px slot shrinks to screen width minus 270: 50 px at a 320 px width. Other illustration placements are future proposals.</p><div class="source">Primary observation · <a href="../../apps/mobile/src/components/gamify-app.tsx">responsive sizing, line 488</a>; <a href="../../apps/mobile/src/components/gamify-app.tsx">placement, line 537</a></div></article>
+ </div>
+ <div class="palette"><div class="swatch"><i style="background:#231A2B"></i>Plum · #231A2B</div><div class="swatch"><i style="background:#B79BFF"></i>Lavender · #B79BFF</div><div class="swatch"><i style="background:#F4A98C"></i>Peach · #F4A98C</div><div class="swatch"><i style="background:#F7D699"></i>Gold · #F7D699</div><div class="swatch"><i style="background:#74C79C"></i>Mint · #74C79C</div></div>
+ <p class="source">Primary observation · active palette, Jakarta type and rounded UI: <a href="../../apps/mobile/src/components/gamify-ui.tsx">gamify-ui.tsx, line 23</a>. The generic starter theme is not the basis for this exploration.</p>
+</section>
+<section id="styles">
+ <div class="section-head"><div><span class="label">02 · Generated style comparison</span><h2>Choose the drawing language first.</h2></div><p>Inference: soft shaded 2D connects the rounded interface with an expressive creature. Flat geometric is the cleanest alternative. Compare at equal size to confirm or challenge that judgment.</p></div>
+ <figure class="figure"><a href="review/01-style-directions.png" target="_blank" rel="noopener"><img src="review/01-style-directions.png" alt="Same proposed Questling shown in soft shaded 2D, flat geometric, matte clay 3D and storybook gouache"></a><figcaption>New generated style board · click to open full size. This earlier Questling variation differs from the neutral master candidate below; compare rendering here rather than exact anatomy.</figcaption></figure>
+ <div class="style-summary">
+ <article class="style-choice active"><span class="status">Recommended</span><h3>Soft shaded 2D</h3><p>Crisp filled shapes, round plum contours, broad restrained shading. A face and silhouette that can carry emotion in a compact UI.</p></article>
+ <article class="style-choice"><span class="status">Strong backup</span><h3>Flat geometric</h3><p>Few flat color regions and clear shape rules. Choose it if the small-size comparison is equally expressive and more legible.</p></article>
+ <article class="style-choice"><span class="status">Alternate direction</span><h3>Matte clay 3D</h3><p>Explore for larger hero and campaign imagery. Volume and texture need a separate small-size check before becoming the cast style.</p></article>
+ <article class="style-choice"><span class="status">Alternate direction</span><h3>Storybook gouache</h3><p>Explore for narrative illustrations and course covers. Brush variation would need tighter review to keep generated characters together.</p></article>
+ </div>
+</section>
+<section id="mascots">
+ <div class="section-head"><div><span class="label">03 · Proposed ranking</span><h2>Five ways to give the app a face.</h2></div><p>The new board compares all five in one drawing language, including cheerful poses. The detailed cards preserve earlier workspace concepts for a broader view.</p></div>
+ <figure class="figure"><a href="review/02-mascot-shortlist.png" target="_blank" rel="noopener"><img src="review/02-mascot-shortlist.png" alt="Questling, Lantern Moth, Trail Fox, Questbara and Pocket Dragon in neutral and cheerful poses"></a><figcaption>New generated shortlist · rankings below are inferred design judgments. Small copies in this board are illustrations, not an exact pixel-size test.</figcaption></figure>
+ <div class="candidates"><article class="candidate">
+ <div class="candidate-top"><span class="number">01</span><span class="tag">Recommended</span></div>
+ <h3>Questling</h3><p class="sub">A small companion for any goal</p>
+ <a class="art-link" href="concepts/01-questling.png" target="_blank" rel="noopener"><img loading="lazy" src="concepts/01-questling.png" alt="Existing detailed Questling concept with neutral and expressive poses"></a>
+ <p class="credit">Existing concept · preserved from the workspace</p><p>A warm gold spark or seed creature with a swept crest and a lavender badge. Its compact face-first shape fits the daily coach role.</p>
+ <div class="trade"><strong>Why it fits</strong><p>Compact, course-neutral, easy to connect with the quest identity.</p><strong>What to test</strong><p>The crest still reads as a flame. Decide whether that connection to streaks is welcome before locking the silhouette.</p></div>
+ </article>
+<article class="candidate">
+ <div class="candidate-top"><span class="number">02</span><span class="tag">Strong alternative</span></div>
+ <h3>Lantern Moth</h3><p class="sub">A gentle guide with a distinct silhouette</p>
+ <a class="art-link" href="concepts/03-lantern-moth.png" target="_blank" rel="noopener"><img loading="lazy" src="concepts/03-lantern-moth.png" alt="Existing detailed Lantern Moth concept with neutral and expressive poses"></a>
+ <p class="credit">Existing concept · preserved from the workspace</p><p>Cream face and gold core, plum body, lavender wings. The new shortlist folds its wings to give the face more room.</p>
+ <div class="trade"><strong>Why it fits</strong><p>Distinctive, gentle personality; a close match to the plum and lavender palette.</p><strong>What to test</strong><p>Wings and antennae compete with the face at small sizes. Test the folded-wing version on the actual warm card.</p></div>
+ </article>
+<article class="candidate">
+ <div class="candidate-top"><span class="number">03</span><span class="tag">Active companion</span></div>
+ <h3>Trail Fox</h3><p class="sub">Curious, playful, ready for the next step</p>
+ <a class="art-link" href="concepts/02-trail-fox.png" target="_blank" rel="noopener"><img loading="lazy" src="concepts/02-trail-fox.png" alt="Existing detailed Trail Fox concept with neutral and expressive poses"></a>
+ <p class="credit">Existing concept · preserved from the workspace</p><p>A round peach fox with cream muzzle, short ears, and a curled tail. The most active everyday-animal direction.</p>
+ <div class="trade"><strong>Why it fits</strong><p>Clear expressions and inviting peach colors.</p><strong>What to test</strong><p>Keep ears and tail inside the square. Its recognition should survive without the neckerchief.</p></div>
+ </article>
+<article class="candidate">
+ <div class="candidate-top"><span class="number">04</span><span class="tag">Calm companion</span></div>
+ <h3>Questbara</h3><p class="sub">Steady support for building habits</p>
+ <a class="art-link" href="concepts/05-questbara.png" target="_blank" rel="noopener"><img loading="lazy" src="concepts/05-questbara.png" alt="Existing detailed Questbara concept with neutral and expressive poses"></a>
+ <p class="credit">Existing concept · preserved from the workspace</p><p>A relaxed capybara with a rounded muzzle and a small lavender scarf. A quieter presence beside daily encouragement.</p>
+ <div class="trade"><strong>Why it fits</strong><p>Gentle, reassuring posture and simple main body mass.</p><strong>What to test</strong><p>Show curiosity and celebration without losing its calm character. It needs a stronger identity than an accessory alone.</p></div>
+ </article>
+<article class="candidate">
+ <div class="candidate-top"><span class="number">05</span><span class="tag">Adventurous option</span></div>
+ <h3>Pocket Dragon</h3><p class="sub">A little more fantasy in the quest</p>
+ <a class="art-link" href="concepts/04-pocket-dragon.png" target="_blank" rel="noopener"><img loading="lazy" src="concepts/04-pocket-dragon.png" alt="Existing detailed Pocket Dragon concept with neutral and expressive poses"></a>
+ <p class="credit">Existing concept · preserved from the workspace</p><p>Lavender body, cream belly, abbreviated horns, wings and tail. The most overtly adventurous proposal.</p>
+ <div class="trade"><strong>Why it fits</strong><p>Clear quest framing and a broad gesture vocabulary.</p><strong>What to test</strong><p>Most appendages to simplify. Choose this if a fantasy tone is desirable for everyday goals.</p></div>
+ </article></div>
+ <div class="comparison"><table><thead><tr><th>Candidate</th><th>Personality proposal</th><th>Decision to resolve</th></tr></thead><tbody><tr><td><strong>01 · Questling</strong></td><td>A small companion for any goal</td><td>The crest still reads as a flame. Decide whether that connection to streaks is welcome before locking the silhouette.</td></tr>
+<tr><td><strong>02 · Lantern Moth</strong></td><td>A gentle guide with a distinct silhouette</td><td>Wings and antennae compete with the face at small sizes. Test the folded-wing version on the actual warm card.</td></tr>
+<tr><td><strong>03 · Trail Fox</strong></td><td>Curious, playful, ready for the next step</td><td>Keep ears and tail inside the square. Its recognition should survive without the neckerchief.</td></tr>
+<tr><td><strong>04 · Questbara</strong></td><td>Steady support for building habits</td><td>Show curiosity and celebration without losing its calm character. It needs a stronger identity than an accessory alone.</td></tr>
+<tr><td><strong>05 · Pocket Dragon</strong></td><td>A little more fantasy in the quest</td><td>Most appendages to simplify. Choose this if a fantasy tone is desirable for everyday goals.</td></tr></tbody></table></div>
+ <p class="note"><strong>My first choice: Questling.</strong> Its central face and compact body suit the narrow Home slot, while its abstract identity can serve unrelated goals. That inference would be weakened if the crest feels too much like the streak flame, or if a folded-wing Moth communicates warmth and recognition more clearly at 50 px. Test idle, celebration and reassurance before making the official choice.</p>
+</section>
+<section id="family">
+ <div class="section-head"><div><span class="label">04 · A common world, different characters</span><h2>Uniform style without identical species.</h2></div><p>The official mascot carries the daily relationship. Course characters can have their own species and topic props. Their rendering, facial construction and visual weight stay consistent.</p></div>
+ <figure class="figure"><a href="review/05-course-character-family-refined.png" target="_blank" rel="noopener"><img src="review/05-course-character-family-refined.png" alt="Refined Questling with coding robot, music otter, fitness bear, mindfulness tortoise and cooking cat in shared 2D style"></a><figcaption>Generated course-cast proof · proposed future feature. The official gold body, crown and violet forehead badge are reserved; the course cast shares the drawing grammar. This is a style study, not a verified multi-pose generation system.</figcaption></figure>
+ <div class="rules">
+ <article class="rule"><span class="number">Lock the rendering</span><h3>One illustration grammar</h3><p>Rounded plum contours at about 1.5–2% of silhouette width; flat major color regions; one or two broad shadow shapes; modest dark oval eyes; small mouth; short rounded limbs. No material texture or body shine.</p></article>
+ <article class="rule"><span class="number">Lock the identity</span><h3>Reference before variations</h3><p>Approve a neutral master for each character, then derive expressions from it. Hold proportions, markings, limb count, face landmarks and outline treatment. A text prompt alone does not establish consistency.</p></article>
+ <article class="rule"><span class="number">Allow meaningful variation</span><h3>Species, accent, one prop</h3><p>Different silhouettes and one simple topic prop give each course a personality. Use the existing category accents. Keep every appendage within the square and reserve Questling’s identity combination.</p></article>
+ </div>
+ <p class="source">Proposed rules · category accents are a primary observation from <a href="../../apps/mobile/src/components/gamify-app.tsx">LOOKS mapping, line 98</a>. Future character generation is not currently represented by <a href="../../services/api/app/roadmaps/schemas.py">RoadmapDraft, line 61</a>.</p>
+ <details><summary>Expression coverage for the official mascot</summary><p>Proposed set: friendly idle; attentive focus; thinking/working; modest step celebration; milestone celebration; gentle reassurance after a missed day or retry. The exploration visualizes idle and cheer; the rest require later identity-preserving review.</p><p>Primary observation · triggers: <a href="../../apps/mobile/src/components/gamify-app.tsx">Home, line 540</a>, <a href="../../apps/mobile/src/components/gamify-app.tsx">exercises, line 945</a>, <a href="../../apps/mobile/src/components/gamify-app.tsx">AI generation, line 1183</a>, <a href="../../apps/mobile/src/components/gamify-app.tsx">completion, line 1008</a>, <a href="../../apps/mobile/src/components/gamify-app.tsx">streak recovery, line 1550</a>.</p></details>
+ <details><summary>Original family board and generation limits</summary><p>The <a href="review/03-course-character-family.png">first family generation</a> gave the cooking cat a fox-like tail and added glossy body highlights. The refined board corrects those issues. Compare results against the written rules each time: generated examples are review evidence, not a guarantee of future consistency.</p></details>
+</section>
+<section id="size-review">
+ <div class="section-head"><div><span class="label">05 · Exact CSS pixel-size preview</span><h2>Review the actual slot sizes.</h2></div><p>The standalone neutral PNG has alpha transparency. Select an image-box size and switch the page theme. The image’s original transparent padding is included; screenshots and browser zoom can change perceived physical size.</p></div>
+ <div class="review-box">
+ <div class="controls"><strong style="font-size:13px">Questling neutral · <span id="size-readout">50 px slot</span></strong><div class="control-buttons" role="group" aria-label="Image slot size">
+ <button type="button" class="size-button" data-size="48" aria-pressed="false">48 px</button><button type="button" class="size-button" data-size="50" aria-pressed="true">50 px</button><button type="button" class="size-button" data-size="64" aria-pressed="false">64 px</button><button type="button" class="size-button" data-size="96" aria-pressed="false">96 px</button><button type="button" class="size-button" data-size="120" aria-pressed="false">120 px</button>
+ </div></div>
+ <div class="preview-row">
+ <div class="preview-tile on-dark"><span class="preview-label">Page · dark</span><div class="image-stage"><img class="size-art" src="review/04-questling-neutral.png" alt="Questling at selected slot size on Page · dark"></div><span class="caption">#231A2B</span></div><div class="preview-tile on-warm-dark"><span class="preview-label">Home card · dark</span><div class="image-stage"><img class="size-art" src="review/04-questling-neutral.png" alt="Questling at selected slot size on Home card · dark"></div><span class="caption">#3B2832</span></div><div class="preview-tile on-light"><span class="preview-label">Page · light</span><div class="image-stage"><img class="size-art" src="review/04-questling-neutral.png" alt="Questling at selected slot size on Page · light"></div><span class="caption">#FAF6F8</span></div><div class="preview-tile on-warm-light"><span class="preview-label">Home card · light</span><div class="image-stage"><img class="size-art" src="review/04-questling-neutral.png" alt="Questling at selected slot size on Home card · light"></div><span class="caption">#FFF1EA</span></div>
+ </div>
+ <div class="layout-examples">
+ <div class="phone-study narrow"><div class="today-title"><strong>Today</strong><span>Layout study</span></div><div class="today-study"><img src="review/04-questling-neutral.png" alt="Questling in a 50 pixel narrow-phone Home slot"><div class="coach"><div class="greeting">Good afternoon</div><div class="copy">Fresh start.<br>One step is plenty.</div><div class="lesson">Your next step</div><span class="start">Start</span></div></div><p class="study-label">320 px study width · 50 px mascot image box</p></div>
+ <div class="phone-study regular"><div class="today-title"><strong>Today</strong><span>Layout study</span></div><div class="today-study"><img src="review/04-questling-neutral.png" alt="Questling in a regular Home slot"><div class="coach"><div class="greeting">Good afternoon</div><div class="copy">You showed up.<br>Let’s make it a run.</div><div class="lesson">Your next step</div><span class="start">Start</span></div></div><p class="study-label">390 px study width · 120 px box (96 px on narrow browsers)</p></div>
+ </div>
+ <p class="source">Layout studies use the repository’s colors, 14 px card gap and responsive image sizing. They are not screenshots of the live app. Primary observation · <a href="../../apps/mobile/src/components/gamify-app.tsx">sizing, line 488</a>; <a href="../../apps/mobile/src/components/gamify-app.tsx">today card, line 537</a>; <a href="../../apps/mobile/src/components/gamify-app.tsx">card style, line 1708</a>.</p>
+ </div>
+ <p class="note"><strong>Reviewer observation:</strong> the face and badge remain discernible in the 50 px image box, but the dark feet lose contrast on plum. The crest still reads as a flame. If Questling is selected, compare a lighter foot edge and a rounder crest before locking the identity. This is visual judgment, not a user recognition test. Only Questling currently has a standalone exact-size preview.</p>
+</section>
+<section id="prompt">
+ <div class="section-head"><div><span class="label">06 · Future generation guidance</span><h2>A reference-backed style specification.</h2></div><p>These are proposed rules to approve with the mascot. Keep identity and style references attached for every new course character and expression.</p></div>
+ <div class="reusable">Create one Gamify character: <strong>[species and identity]</strong>, for <strong>[course topic]</strong>, in <strong>[expression / pose]</strong>. Use the approved style reference; for a new pose, also use that character’s approved neutral master. Soft shaded 2D: consistent rounded plum #231A2B contours, flat major fills, broad restrained shadow shapes, modest dark oval eyes and short rounded limbs. Use <strong>[body color]</strong> and <strong>[one category accent]</strong>, with cream facial contrast. Preserve <strong>[identity landmarks and proportions]</strong>. Include at most one simple prop: <strong>[prop or none]</strong>. Full silhouette on a large square artboard, 8–10% safe margin, transparent background, no text, scenery, glow, texture, body shine or cast shadow. Course characters exclude Questling’s official crown-and-forehead-badge combination.</div>
+ <div class="actions"><a class="action-link secondary" href="decision-guide.md">Full guide and acceptance checklist</a><a class="action-link secondary" href="generation-prompts.json">Exact prompts used for this exploration</a><a class="action-link secondary" href="review/04-questling-neutral.png">Open transparent neutral concept</a></div>
+ <details><summary>How to turn the chosen concept into an official mascot</summary><p>Approve the candidate and rendering style; settle the silhouette and face proportions in one neutral master; derive idle, cheer, focus and reassurance from that reference; inspect each at 50/96/120 px in both Home themes; then prepare individual assets and integrate them. This exploration leaves the choice open and does not change the application.</p></details>
+</section>
+<footer class="foot"><span>Gamify · mascot decision study · generated concepts</span><div><a href="decision-guide.md">Evidence and design guide</a><a href="generation-prompts.json">Generation prompts</a><a href="#top">Back to top</a></div></footer>
+</main>
+<script>
+const themeButton=document.getElementById('theme-toggle');
+function setTheme(theme){
+ document.body.dataset.theme=theme;
+ themeButton.textContent=theme==='dark'?'View light theme':'View dark theme';
+ themeButton.setAttribute('aria-pressed',String(theme==='light'));
+}
+setTheme(new URLSearchParams(location.search).get('theme')==='light'?'light':'dark');
+themeButton.addEventListener('click',()=>setTheme(document.body.dataset.theme==='dark'?'light':'dark'));
+document.querySelectorAll('[data-size]').forEach(button=>{
+ button.addEventListener('click',()=>{
+  const size=Number(button.dataset.size);
+  document.querySelectorAll('.size-art').forEach(img=>{img.style.width=size+'px';img.style.height=size+'px'});
+  document.querySelectorAll('[data-size]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+  document.getElementById('size-readout').textContent=size+' px slot';
+ });
+});
+</script>
+</body>
+</html>

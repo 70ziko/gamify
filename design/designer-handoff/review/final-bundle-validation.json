@@ -1,0 +1,53 @@
+{
+  "public_files": 48,
+  "bundle_MiB": 38.14,
+  "local_references_checked": 400,
+  "embedded_assets_seen": 18,
+  "link_anchor_errors": [],
+  "external_references": [],
+  "private_path_or_credential_pattern_hits": [],
+  "screenshot_checks": [
+    {
+      "file": "01-welcome.png",
+      "matches_original": true
+    },
+    {
+      "file": "02-home-dark.png",
+      "matches_original": true
+    },
+    {
+      "file": "03-home-light.png",
+      "matches_original": true
+    },
+    {
+      "file": "04-roadmap.png",
+      "matches_original": true
+    },
+    {
+      "file": "05-quiz.png",
+      "matches_original": true
+    },
+    {
+      "file": "06-practice.png",
+      "matches_original": true
+    },
+    {
+      "file": "07-completion.png",
+      "matches_original": true
+    },
+    {
+      "file": "08-explore.png",
+      "matches_original": true
+    }
+  ],
+  "standalone_original_screenshots_verified": [
+    "01-welcome.png",
+    "02-home-dark.png",
+    "03-home-light.png",
+    "04-roadmap.png",
+    "05-quiz.png",
+    "06-practice.png",
+    "07-completion.png",
+    "08-explore.png"
+  ]
+}

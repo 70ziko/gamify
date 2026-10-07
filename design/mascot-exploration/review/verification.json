@@ -1,0 +1,33 @@
+{
+  "images": 15,
+  "allLoaded": true,
+  "themeToggle": "passed",
+  "sizeButtons": [
+    48,
+    50,
+    64,
+    96,
+    120
+  ],
+  "horizontalOverflow": [
+    {
+      "viewport": 1440,
+      "document": 1440
+    },
+    {
+      "viewport": 390,
+      "document": 390
+    },
+    {
+      "viewport": 320,
+      "document": 320
+    }
+  ],
+  "pageErrors": [],
+  "localReferences": {
+    "count": 48,
+    "missing": []
+  },
+  "scope": "Exploration guide browser checks; not live mobile app recognition or production identity validation.",
+  "generationMethod": "Built-in image_gen; four new images and one targeted refinement."
+}

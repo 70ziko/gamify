@@ -1,0 +1,27 @@
+{
+  "images": 17,
+  "allLoaded": true,
+  "themeToggle": "passed",
+  "sizeButtons": [
+    48,
+    50,
+    64,
+    96,
+    120
+  ],
+  "horizontalOverflow": [
+    {
+      "viewport": 1440,
+      "document": 1440
+    },
+    {
+      "viewport": 390,
+      "document": 390
+    },
+    {
+      "viewport": 320,
+      "document": 320
+    }
+  ],
+  "pageErrors": []
+}

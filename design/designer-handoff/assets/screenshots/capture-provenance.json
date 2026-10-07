@@ -1,0 +1,115 @@
+{
+  "captured_at": "2026-10-06",
+  "source": "Actual Gamify Expo web app running at http://127.0.0.1:8081/",
+  "source_route": "apps/mobile/src/app/index.tsx",
+  "component_file": "apps/mobile/src/components/gamify-app.tsx",
+  "method": "Headless Chromium / Playwright; viewport captures of unchanged running app components",
+  "viewport_css_pixels": {
+    "width": 390,
+    "height": 844
+  },
+  "device_scale_factor": 2,
+  "image_pixels": {
+    "width": 780,
+    "height": 1688
+  },
+  "network_policy": "Only local Expo assets may reach a server. Auth/API calls are fulfilled in the browser with synthetic data. All other network requests are blocked. No real API writes, account operations, environment edits, source edits, database changes, commits, or pushes.",
+  "data": "All account, course, quiz, progress, rating, leaderboard and time values in populated screenshots are synthetic designer demo fixtures, not production/live user data. Welcome is the unchanged app onboarding screen without demo content.",
+  "screenshots": [
+    {
+      "filename": "01-welcome.png",
+      "component": "WelcomeScreen",
+      "caption": "The opening promise: turn habits, skills and side projects into a quest.",
+      "demo_data": false
+    },
+    {
+      "filename": "02-home-dark.png",
+      "component": "HomeScreen",
+      "caption": "The daily coach card puts the mascot next to an encouraging message and one clear next step. Dark theme.",
+      "demo_data": true
+    },
+    {
+      "filename": "04-roadmap.png",
+      "component": "RoadmapScreen",
+      "caption": "Progress becomes a winding roadmap, with the next small step and a checkpoint.",
+      "demo_data": true
+    },
+    {
+      "filename": "05-quiz.png",
+      "component": "StepScreen (quiz)",
+      "caption": "A short focused lesson: choose an answer, then check it.",
+      "demo_data": true
+    },
+    {
+      "filename": "06-practice.png",
+      "component": "StepScreen (timer)",
+      "caption": "Learning extends beyond quizzes into timed practice and real world action.",
+      "demo_data": true
+    },
+    {
+      "filename": "07-completion.png",
+      "component": "CompleteScreen",
+      "caption": "A completed step rewards progress and leaves space for an encouraging celebration.",
+      "demo_data": true
+    },
+    {
+      "filename": "08-explore.png",
+      "component": "ExploreScreen",
+      "caption": "Roadmaps cover many topics. The companion family must work across different interests.",
+      "demo_data": true
+    },
+    {
+      "filename": "03-home-light.png",
+      "component": "HomeScreen",
+      "caption": "The same daily coach card in the light theme. The mascot must remain legible on both backgrounds.",
+      "demo_data": true
+    }
+  ],
+  "intercepted_requests": [
+    {
+      "group": "api-fixture",
+      "path": "/me",
+      "method": "GET"
+    },
+    {
+      "group": "api-fixture",
+      "path": "/me/progress",
+      "method": "GET"
+    },
+    {
+      "group": "api-fixture",
+      "path": "/me/league",
+      "method": "GET"
+    },
+    {
+      "group": "api-fixture",
+      "path": "/roadmaps",
+      "method": "GET"
+    },
+    {
+      "group": "api-fixture",
+      "path": "/roadmaps/00000000-0000-4000-8000-000000000101",
+      "method": "GET"
+    },
+    {
+      "group": "api-fixture",
+      "path": "/steps/00000000-0000-4000-8000-000000000203",
+      "method": "GET"
+    },
+    {
+      "group": "api-fixture",
+      "path": "/steps/00000000-0000-4000-8000-000000000203/complete",
+      "method": "POST"
+    },
+    {
+      "group": "api-fixture",
+      "path": "/marketplace/listings",
+      "method": "GET"
+    },
+    {
+      "group": "api-fixture",
+      "path": "/me/activity",
+      "method": "GET"
+    }
+  ]
+}
