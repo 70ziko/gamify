@@ -1,0 +1,13 @@
+{
+  "project_id": "appgprj_6ac622cc645081919ea5d7992b47f6b4",
+  "version_id": "appgprj_6ac622cc645081919ea5d7992b47f6b4~appgver_083a5e99b3b0819196d0a1114723b0f1",
+  "deployment_id": "appgdep_6ac62377b7888191ac2e112cc4662f1c",
+  "status": "succeeded",
+  "url": "https://gamify-mascot-design-brief-20261007.peppy-grebe-5873.chatgpt.site",
+  "access_mode": "public",
+  "commit_sha": "1f6c7885e894e01667fd0e39c5ff6b32e497fc70",
+  "checkout_path": "/Users/70ziko/.codex/visualizations/2026/10/06/01a111c5-ad93-7213-8786-3cfc1faabc72/gamify-designer-site",
+  "committed_files": 49,
+  "main_project_history_changed": false,
+  "published_at": "2026-10-07T10:48:44.894825+00:00"
+}
