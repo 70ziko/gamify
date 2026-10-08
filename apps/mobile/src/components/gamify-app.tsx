@@ -483,10 +483,10 @@ function streakLine(days: number) {
 }
 
 // Home must fit one phone screen above the bottom nav, so "Your roadmaps" is visible without scrolling.
-// Short phones (iPhone SE, small Androids) get the compact sizes.
+// Short phones (iPhone SE, 360×740 Androids) get the compact sizes.
 const homeSizes = {
-  regular: { mascot: 120, coach: 16, infoGap: 10, cardPadding: 12, levelBadge: 36, questRow: 40, flatRoadmaps: false },
-  compact: { mascot: 96, coach: 13.5, infoGap: 8, cardPadding: 9, levelBadge: 30, questRow: 30, flatRoadmaps: true },
+  regular: { gap: 20, nextPadding: 14, mascot: 116, coach: 19, stepTitle: 17, compactButton: false, questRow: 40, flatRoadmaps: false },
+  compact: { gap: 12, nextPadding: 11, mascot: 92, coach: 15.5, stepTitle: 15, compactButton: true, questRow: 30, flatRoadmaps: true },
 };
 function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, onCreateAi, onCreateManual, onExplore }: { mode: ThemeMode; roadmapId?: string; onSelect: (tab: MainTab) => void; onRoadmap: (id: string) => void; onPlay: (roadmapId: string, stepId: string) => void; onStreak: () => void; onCreateAi: (goal?: string) => void; onCreateManual: () => void; onExplore: () => void }) {
   const p = palette[mode];
@@ -498,9 +498,7 @@ function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, on
   const now = new Date();
   const greeting = greetingFor(now.getHours());
   const screen = useWindowDimensions();
-  const size = homeSizes[screen.height < 740 ? 'compact' : 'regular'];
-  // On narrow phones the mascot gives up width so the next lesson and its Start button still fit beside it.
-  const mascot = Math.min(size.mascot, screen.width - 270);
+  const size = homeSizes[screen.height < 780 ? 'compact' : 'regular'];
   if (!profile.data || !progress.data || !roadmaps.data) {
     return (
       <MainScaffold mode={mode} active="home" onSelect={onSelect}>
@@ -513,62 +511,48 @@ function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, on
   const minutesLeft = 24 * 60 - now.getHours() * 60 - now.getMinutes();
   return (
     <MainScaffold mode={mode} active="home" onSelect={onSelect}>
-      <View style={styles.homeHeader}>
-        <View style={styles.homeTitle}>
-          <GText weight={800} style={{ color: p.ink, fontSize: 24, letterSpacing: -0.4 }}>Today</GText>
-          <GText weight={600} style={{ color: p.muted, fontSize: 12.5 }}>{now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</GText>
-        </View>
-        <View style={[styles.row, { gap: 6 }]}>
-          <Pressable accessibilityLabel="Your streak" onPress={onStreak} style={[styles.headerPill, { backgroundColor: p.surface, borderColor: p.border }]}>
-            <GText style={{ fontSize: 14 }}>🔥</GText><GText weight={700} style={{ color: p.streak, fontSize: 13 }}>{streak.current}</GText>
-          </Pressable>
-          <Pressable accessibilityLabel="Your league" onPress={() => onSelect('league')} style={[styles.headerPill, { backgroundColor: p.surface, borderColor: p.border }]}>
-            <Icon name="trophy" color={p.success} size={15} /><GText weight={700} style={{ color: p.success, fontSize: 13 }}>{league.data?.me ? `#${league.data.me.rank}` : '–'}</GText>
-          </Pressable>
-          <Pressable accessibilityLabel="Your profile" onPress={() => onSelect('profile')}>
-            <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.avatarSmall}>
-              <GText weight={800} style={{ color: p.bg, fontSize: 14 }}>{initial(profile.data)}</GText>
-            </LinearGradient>
-          </Pressable>
+      {/* One line of progress: the level bar takes what's left after the streak and league chips. */}
+      <View style={[styles.homeHeader, { marginBottom: size.gap }]}>
+        <Pressable accessibilityRole="button" onPress={() => onSelect('profile')} style={({ pressed }) => [{ flex: 1 }, pressed && { opacity: 0.8 }]}>
+          <LevelBar p={p} level={level} trackColor={p.border} compact />
+        </Pressable>
+        <View style={[styles.row, { gap: 5 }]}>
+          <HeaderStat p={p} label="Your streak" icon="flame" color={p.streak} value={`${streak.current}`} onPress={onStreak} />
+          <HeaderStat p={p} label="Your league" icon="trophy" color={p.success} value={league.data?.me ? `#${league.data.me.rank}` : '–'} onPress={() => onSelect('league')} />
         </View>
       </View>
 
-      <View style={[styles.todayCard, { backgroundColor: p.warm, borderColor: p.warmBorder, padding: size.cardPadding }]}>
-        <MascotPlaceholder size={mascot} />
-        <View style={[styles.todayInfo, { gap: size.infoGap }]}>
-          <View>
+      <View style={{ gap: size.gap - 4, marginBottom: size.gap }}>
+        <View style={[styles.row, { gap: 16 }]}>
+          <MascotPlaceholder size={size.mascot} />
+          <View style={{ flex: 1, gap: 4 }}>
             <View style={[styles.row, { gap: 5 }]}>
-              <Icon name={greeting.icon} color={p.accentText} size={13} />
-              <GText numberOfLines={1} weight={700} style={{ color: p.accentText, fontSize: 12 }}>{`${greeting.label}, ${firstName(profile.data)}`}</GText>
+              <Icon name={greeting.icon} color={p.accentText} size={14} />
+              <GText numberOfLines={1} weight={700} style={{ color: p.accentText, fontSize: 13, flexShrink: 1 }}>{`${greeting.label}, ${firstName(profile.data)}`}</GText>
             </View>
-            <GText weight={800} style={{ color: p.ink, fontSize: size.coach, lineHeight: size.coach + 5, marginTop: 3 }}>{streakLine(streak.current)}</GText>
-          </View>
-          <View style={styles.todayLesson}>
-            {focus ? (
-              <Pressable onPress={() => onRoadmap(focus.id)} style={({ pressed }) => [{ flex: 1, gap: 2 }, pressed && { opacity: 0.8 }]}>
-                <View style={[styles.row, { gap: 5 }]}>
-                  <Icon name={LOOKS[focus.category].icon} color={p.muted} size={12} />
-                  <GText numberOfLines={1} weight={600} style={{ color: p.muted, fontSize: 11, flex: 1 }}>{focus.title}</GText>
-                </View>
-                <GText numberOfLines={1} weight={800} style={{ color: p.ink, fontSize: 15 }}>{next?.title ?? 'All done for now'}</GText>
-                {next ? (
-                  <View style={[styles.row, { gap: 8 }]}>
-                    <StepMeta icon="clock" label={`${next.minutes} min`} color={p.muted} />
-                    <StepMeta icon="star" label={`+${next.xp} XP`} color={p.streak} />
-                  </View>
-                ) : null}
-              </Pressable>
-            ) : (
-              <GText weight={700} style={{ color: p.muted, fontSize: 12, flex: 1 }}>Pick your first quest</GText>
-            )}
-            {focus && next ? <PrimaryButton label="Start" onPress={() => onPlay(focus.id, next.id)} p={p} compact /> : null}
-            {focus ? null : <PrimaryButton label="Create" onPress={() => setCreateOpen(true)} p={p} compact />}
+            <GText weight={800} style={{ color: p.ink, fontSize: size.coach, lineHeight: size.coach + 6 }}>{streakLine(streak.current)}</GText>
           </View>
         </View>
-      </View>
-
-      <View style={styles.levelBlock}>
-        <LevelProgress p={p} badge={size.levelBadge} level={level} onPress={() => onSelect('profile')} />
+        <Card p={p} style={{ gap: 12, padding: size.nextPadding }}>
+          {focus ? (
+            <Pressable onPress={() => onRoadmap(focus.id)} style={({ pressed }) => [{ gap: 3 }, pressed && { opacity: 0.8 }]}>
+              <View style={[styles.row, { gap: 6 }]}>
+                <Overline p={p}>Up next</Overline>
+                <Icon name={LOOKS[focus.category].icon} color={p.muted} size={12} />
+                <GText numberOfLines={1} weight={600} style={{ color: p.muted, fontSize: 11.5, flex: 1 }}>{focus.title}</GText>
+              </View>
+              <View style={[styles.row, { gap: 10 }]}>
+                <GText numberOfLines={1} weight={800} style={{ color: p.ink, fontSize: size.stepTitle, flex: 1 }}>{next?.title ?? 'All done for now'}</GText>
+                {next ? <StepMeta icon="clock" label={`${next.minutes} min`} color={p.muted} /> : null}
+                {next ? <StepMeta icon="star" label={`+${next.xp} XP`} color={p.streak} /> : null}
+              </View>
+            </Pressable>
+          ) : (
+            <GText weight={700} style={{ color: p.muted, fontSize: size.stepTitle }}>Pick your first quest</GText>
+          )}
+          {focus && next ? <PrimaryButton icon="play" label="Start step" onPress={() => onPlay(focus.id, next.id)} p={p} compact={size.compactButton} style={{ boxShadow: `0 8px 22px ${p.accentDeep}55` }} /> : null}
+          {focus ? null : <PrimaryButton icon="plus" label="Create a roadmap" onPress={() => setCreateOpen(true)} p={p} compact={size.compactButton} style={{ boxShadow: `0 8px 22px ${p.accentDeep}55` }} />}
+        </Card>
       </View>
 
       <View style={styles.sectionBlock}>
@@ -594,27 +578,46 @@ function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, on
   );
 }
 
-// Level progress has its own look wherever it appears (Home, step complete) without a card around it: a purple badge,
-// purple "Level 12", and gold for the XP left. The light palette's purples keep the white number readable in both themes.
+// Streak and league in Home's header: tinted chips in their role color.
+function HeaderStat({ p, label, icon, color, value, onPress }: { p: Palette; label: string; icon: IconName; color: string; value: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.headerStat, { backgroundColor: `${color}1F`, borderColor: `${color}38` }, pressed && { opacity: 0.8 }]}>
+      <Icon name={icon} color={color} size={15} />
+      <GText weight={800} style={{ color, fontSize: 13.5 }}>{value}</GText>
+    </Pressable>
+  );
+}
+
+// Level progress has its own look wherever it appears (Home, step complete) without a card around it: purple "Level 12"
+// and gold for the XP left, plus a purple badge on step complete. The light palette's purples keep the badge's white
+// number readable in both themes.
 const levelGradient = [palette.light.primary, palette.light.primaryDeep] as const;
 
-function LevelProgress({ p, badge = 34, level, onPress }: { p: Palette; badge?: number; level: Level; onPress?: () => void }) {
+// Home squeezes this bar into its one-line header (`compact`), where the level title is cut short before the XP left.
+// Pass a track that shows on the page background there.
+function LevelBar({ p, level, trackColor, compact = false }: { p: Palette; level: Level; trackColor?: string; compact?: boolean }) {
   return (
-    <Pressable accessibilityRole={onPress ? 'button' : undefined} disabled={!onPress} onPress={onPress} style={({ pressed }) => [styles.levelProgress, pressed && { opacity: 0.8 }]}>
-      <LinearGradient colors={levelGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.levelBadge, { width: badge, height: badge }]}>
+    <View style={{ flexGrow: 1, flexShrink: 1, gap: compact ? 6 : 7 }}>
+      <View style={[styles.spaceBetween, { gap: 8 }]}>
+        <GText numberOfLines={1} weight={800} style={{ color: p.primaryText, fontSize: compact ? 12.5 : 13.5, flexShrink: 1 }}>{`Level ${level.level}`}<GText weight={700} style={{ color: p.muted }}>{`  ·  ${level.title}`}</GText></GText>
+        <View style={[styles.row, { gap: 4 }]}>
+          <Icon name="star" color={p.streak} size={compact ? 11 : 12} />
+          <GText weight={700} style={{ color: p.streak, fontSize: compact ? 11 : 11.5 }}>{`${level.span - level.into_level} XP to go`}</GText>
+        </View>
+      </View>
+      <ProgressBar value={(level.into_level / level.span) * 100} p={p} color={p.streak} trackColor={trackColor} height={compact ? 6 : 8} />
+    </View>
+  );
+}
+
+function LevelProgress({ p, level }: { p: Palette; level: Level }) {
+  return (
+    <View style={styles.levelProgress}>
+      <LinearGradient colors={levelGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.levelBadge}>
         <GText weight={800} style={{ color: '#fff', fontSize: 15 }}>{level.level}</GText>
       </LinearGradient>
-      <View style={{ flex: 1, gap: 7 }}>
-        <View style={styles.spaceBetween}>
-          <GText weight={800} style={{ color: p.primaryText, fontSize: 13.5 }}>{`Level ${level.level}`}<GText weight={700} style={{ color: p.muted }}>{`  ·  ${level.title}`}</GText></GText>
-          <View style={[styles.row, { gap: 4 }]}>
-            <Icon name="star" color={p.streak} size={12} />
-            <GText weight={700} style={{ color: p.streak, fontSize: 11.5 }}>{`${level.span - level.into_level} XP to go`}</GText>
-          </View>
-        </View>
-        <ProgressBar value={(level.into_level / level.span) * 100} p={p} color={p.streak} height={8} />
-      </View>
-    </Pressable>
+      <LevelBar p={p} level={level} />
+    </View>
   );
 }
 
@@ -1715,17 +1718,11 @@ const styles = StyleSheet.create({
   radio: { width: 24, height: 24, borderRadius: 999, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   reminderCard: { padding: 16, gap: 10 },
   segmentRow: { flexDirection: 'row', gap: 8 },
-  homeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  homeTitle: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  headerPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, height: 36, borderRadius: 999, borderWidth: 1 },
+  homeHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerStat: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 34, borderRadius: 11, borderWidth: 1 },
   streakPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, height: 36, borderRadius: 999, borderWidth: 1 },
-  avatarSmall: { width: 36, height: 36, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  todayCard: { flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderRadius: 20, marginBottom: 12 },
-  todayInfo: { flex: 1 },
-  todayLesson: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  levelBlock: { paddingHorizontal: 2, marginTop: 2, marginBottom: 16 },
   levelProgress: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  levelBadge: { borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  levelBadge: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   sectionBlock: { gap: 8, marginBottom: 12 },
   timerPill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
   questList: { padding: 5, gap: 2 },

@@ -29,9 +29,6 @@ export const palette = {
     chrome: '#1E1626',
     border: '#42344D',
     borderStrong: '#4C3B58',
-    // Peach-tinted surface for the moments that should feel personal (Home's today card).
-    warm: '#3B2832',
-    warmBorder: '#5C3F47',
     ink: '#F2ECF6',
     muted: '#AEA1BC',
     dim: '#8C8098',
@@ -57,8 +54,6 @@ export const palette = {
     chrome: '#FFFFFF',
     border: '#EBE0EA',
     borderStrong: '#E3D7E2',
-    warm: '#FFF1EA',
-    warmBorder: '#F6D4C6',
     ink: '#2C2135',
     muted: '#6E6379',
     dim: '#948AA0',
@@ -194,6 +189,7 @@ export function PrimaryButton({
   label,
   onPress,
   p,
+  icon,
   compact = false,
   disabled = false,
   style,
@@ -201,6 +197,7 @@ export function PrimaryButton({
   label: string;
   onPress: () => void;
   p: Palette;
+  icon?: IconName;
   compact?: boolean;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -211,7 +208,8 @@ export function PrimaryButton({
         colors={[p.accent, p.accentDeep]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.primaryButton, compact && styles.compactButton]}>
+        style={[styles.primaryButton, compact && styles.compactButton, icon && styles.iconButton]}>
+        {icon ? <Icon name={icon} color={palette.dark.bg} size={compact ? 15 : 17} /> : null}
         <GText weight={800} style={[styles.buttonText, { color: palette.dark.bg }]}>
           {label}
         </GText>
@@ -477,6 +475,7 @@ const icons = {
   code: ['chevron.left.forwardslash.chevron.right', 'code'],
   dumbbell: ['dumbbell.fill', 'fitness_center'],
   flag: ['flag.fill', 'flag'],
+  flame: ['flame.fill', 'local_fire_department'],
   fork: ['fork.knife', 'restaurant'],
   gear: ['gearshape.fill', 'settings'],
   globe: ['globe', 'public'],
@@ -640,6 +639,10 @@ const styles = StyleSheet.create({
   },
   compactButton: {
     minHeight: 48,
+  },
+  iconButton: {
+    flexDirection: 'row',
+    gap: 8,
   },
   buttonText: {
     fontSize: 15.5,
