@@ -47,7 +47,8 @@ leaderboards layered on top.
   `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (audience `authenticated`, issuer
   `<SUPABASE_URL>/auth/v1`). Staff users carry `app_metadata.staff = true`, which
   only the service role can set.
-- **Realtime** comes back for leagues, with scoped `select` grants.
+- **No Realtime.** The League screen polls `GET /me/league` every 30 s instead,
+  so the no-grants rule above holds for every table.
 
 ## Core domain — the EXP abstraction
 
@@ -134,5 +135,5 @@ queued writes safe to retry.
 5. AI roadmap drafts and step suggestions (wired in the app; prompts to be designed).
 6. Streaks and daily quests (done).
 7. Marketplace: publish, browse, install, review (done).
-8. Leagues: tiered weekly cohorts with lazy rollover (done); Realtime pending.
+8. Leagues: tiered weekly cohorts with lazy rollover (done; the app polls standings every 30 s).
 9. Ops: Sentry, PostHog, EAS Build/Update, TestFlight, API hosting.

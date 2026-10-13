@@ -1,13 +1,9 @@
 import type { Session } from '@supabase/supabase-js';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Animated,
-  Easing,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -16,6 +12,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
@@ -44,6 +41,73 @@ import {
   type ThemeMode,
   Toggle,
 } from '@/components/gamify-ui';
+import { AnimatedCount, Bump, CelebrationCheck, type CountProps, enterAt, type Entrance, LevelUpPill, Pop } from '@/components/celebrate';
+import {
+  Appear,
+  BorderFlash,
+  Breathe,
+  Chevron,
+  Enter,
+  ListRow,
+  newKey,
+  PopIn,
+  PopOnChange,
+  reflow,
+  RegenerateTile,
+  SegmentedPicker,
+  SkipEnterOnMount,
+  SpinnerRing,
+  stateFade,
+  TurnOnce,
+  UnitStep,
+  UnitSteps,
+  useStagger,
+  ValueSwap,
+} from '@/components/flow-motion';
+import {
+  type Entering,
+  FadeOnChange,
+  Glow,
+  landing,
+  pathLength,
+  pathThrough,
+  PulseButton,
+  RollingText,
+  tintFade,
+  useEnterOnce,
+  useFillFrom,
+  useLanding,
+  usePathMotion,
+  useSwap,
+  WalkedPath,
+  XpFloat,
+} from '@/components/home-motion';
+import { ContentIn, forgetSeen, haptic, PressableScale, useFirstTime, useSeen } from '@/components/motion';
+import {
+  CheckPop,
+  colorTransition,
+  CrossFade,
+  DelayedSpinner,
+  Dim,
+  FlashRing,
+  FloatingBadge,
+  FocusRing,
+  fadeIn,
+  HighlightPressable,
+  KeyedFade,
+  KeyFace,
+  RatingStar,
+  ShakeIn,
+  SpinningHalo,
+  Swap,
+  Turn,
+  useEntrances,
+  useGridEntrance,
+  usePopIn,
+} from '@/components/screen-motion';
+import { ScreenTransition, type TransitionKind } from '@/components/screen-transition';
+import { SheetModal, SheetPanel } from '@/components/sheet';
+import { AnswerCard, CloseButton, ExerciseSlide, ResultDock, TimerCard } from '@/components/step-motion';
 import {
   api,
   type Brief,
@@ -120,6 +184,8 @@ const REMINDERS = [
 ];
 const WEEKS = [4, 8, 12, 24];
 const MINUTES = [5, 10, 15, 30, 60];
+// Rivals' XP only reaches the app on refetch, so poll the league while it's on screen.
+const LEAGUE_REFETCH_MS = 30_000;
 const LEVELS = [
   { level: 'beginner', label: 'Beginner' },
   { level: 'some', label: 'Some' },
@@ -160,9 +226,55 @@ function useFocusRoadmap(roadmapId?: string) {
   return { roadmaps, focus };
 }
 
+// Navigation keeps the previous screen so the transition can tell a push from a back.
+type Nav = { screen: ScreenName; from?: ScreenName };
+const moveTo = (next: ScreenName) => (nav: Nav): Nav => (nav.screen === next ? nav : { screen: next, from: nav.screen });
+
+// How deep each screen sits: a deeper screen enters from the right, a shallower one from the left.
+const DEPTH: Record<ScreenName, number> = {
+  welcome: 0,
+  interests: 1,
+  commitment: 2,
+  'sign-up': 3,
+  'sign-in': 1,
+  home: 0,
+  explore: 0,
+  roadmap: 0,
+  league: 0,
+  profile: 0,
+  course: 1,
+  settings: 1,
+  manual: 1,
+  'ai-prompt': 1,
+  'ai-generating': 2,
+  'ai-review': 3,
+  step: 1,
+  complete: 2,
+  streak: 1,
+};
+const TABS = new Set<ScreenName>(['home', 'explore', 'roadmap', 'league', 'profile']);
+const SIGNED_OUT = new Set<ScreenName>(['welcome', 'interests', 'commitment', 'sign-up', 'sign-in']);
+// Forward moves that land shallower: finishing a flow opens its roadmap, regenerating restarts the draft.
+const FORWARD = new Set<`${ScreenName}>${ScreenName}`>(['course>roadmap', 'manual>roadmap', 'ai-review>roadmap', 'ai-review>ai-generating']);
+// Screens drawn in the chosen theme; the rest are always dark.
+const THEMED = new Set<ScreenName>(['home', 'explore', 'roadmap', 'league', 'profile', 'course', 'settings']);
+
+function transitionFor({ screen: to, from }: Nav): TransitionKind {
+  if (!from || SIGNED_OUT.has(from) !== SIGNED_OUT.has(to)) return 'auth';
+  if (TABS.has(from) && TABS.has(to)) return 'tab';
+  // The streak sheet rises on its own, so its screen only fades in (a second rise would stack on the first).
+  if (to === 'streak') return 'celebrate';
+  if (to === 'step') return 'up';
+  if (from === 'step' && to === 'complete') return 'celebrate';
+  // Closing a modal or cancelling a generation uncovers the screen underneath.
+  if (from === 'step' || from === 'streak' || from === 'complete' || (from === 'ai-generating' && to === 'ai-prompt')) return 'reveal';
+  if (FORWARD.has(`${from}>${to}`)) return 'push';
+  return DEPTH[to] < DEPTH[from] ? 'back' : 'push';
+}
+
 export function GamifyApp() {
   const [session, setSession] = useState<Session | null>();
-  const [screen, setScreen] = useState<ScreenName>('welcome');
+  const [nav, setNav] = useState<Nav>({ screen: 'welcome' });
   const [mode, setMode] = useState<ThemeMode>('dark');
   const [prefs, setPrefs] = useState<Prefs>({ interests: ['fitness', 'music', 'mindfulness'], daily_xp_goal: 30, reminder_time: '20:00:00' });
   const [roadmapId, setRoadmapId] = useState<string>();
@@ -176,10 +288,11 @@ export function GamifyApp() {
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
-      if (event === 'INITIAL_SESSION' && next) setScreen('home');
+      if (event === 'INITIAL_SESSION' && next) setNav(moveTo('home'));
       if (event === 'SIGNED_OUT') {
         queryClient.clear();
-        setScreen('welcome');
+        forgetSeen();
+        setNav(moveTo('welcome'));
       }
     });
     return () => data.subscription.unsubscribe();
@@ -187,110 +300,134 @@ export function GamifyApp() {
 
   if (session === undefined) return <ScreenFrame mode={mode} />;
 
+  const go = (next: ScreenName) => setNav(moveTo(next));
   const selectMain = (tab: MainTab) => {
-    setScreen(tab === 'continue' ? 'roadmap' : tab);
+    go(tab === 'continue' ? 'roadmap' : tab);
   };
   const openRoadmap = (id: string) => {
     setRoadmapId(id);
-    setScreen('roadmap');
+    go('roadmap');
   };
   const play = (roadmap: string, step: string) => {
     setRoadmapId(roadmap);
     setStepId(step);
-    setScreen('step');
+    go('step');
   };
   const openListing = (id: string) => {
     setListingId(id);
-    setScreen('course');
+    go('course');
   };
   const openAi = (goal?: string) => {
     if (goal) setBrief({ ...DEFAULT_BRIEF, goal });
-    setScreen('ai-prompt');
+    go('ai-prompt');
   };
   const startDraft = async (next: Brief) => {
     const run = await api<DraftRun>('/ai/roadmap-drafts', 'POST', next);
     setBrief(next);
     setRunId(run.id);
-    setScreen('ai-generating');
+    go('ai-generating');
   };
 
-  switch (screen) {
-    case 'welcome':
-      return <WelcomeScreen onStart={() => setScreen('interests')} onSignIn={() => setScreen('sign-in')} />;
-    case 'interests':
-      return <InterestsScreen picked={prefs.interests} onPick={(interests) => setPrefs({ ...prefs, interests })} onBack={() => setScreen('welcome')} onContinue={() => setScreen('commitment')} />;
-    case 'commitment':
-      return <CommitmentScreen prefs={prefs} onChange={setPrefs} onBack={() => setScreen('interests')} onContinue={() => setScreen('sign-up')} />;
-    case 'sign-up':
-      return <AuthScreen prefs={prefs} onBack={() => setScreen('commitment')} onSwitch={() => setScreen('sign-in')} onDone={() => setScreen('home')} />;
-    case 'sign-in':
-      return <AuthScreen onBack={() => setScreen('welcome')} onSwitch={() => setScreen('interests')} onDone={() => setScreen('home')} />;
-    case 'home':
-      return <HomeScreen mode={mode} roadmapId={roadmapId} onSelect={selectMain} onRoadmap={openRoadmap} onPlay={play} onStreak={() => setScreen('streak')} onCreateAi={openAi} onCreateManual={() => setScreen('manual')} onExplore={() => setScreen('explore')} />;
-    case 'roadmap':
-      return <RoadmapScreen mode={mode} roadmapId={roadmapId} onSelect={selectMain} onBack={() => setScreen('home')} onPlay={play} />;
-    case 'step':
-      return <StepScreen stepId={stepId} onClose={() => setScreen('roadmap')} onDone={(done) => { setResult(done); setScreen('complete'); }} />;
-    case 'complete':
-      return result ? <CompleteScreen result={result} onContinue={() => setScreen('roadmap')} /> : null;
-    case 'ai-prompt':
-      return <AiPromptScreen brief={brief} onBack={() => setScreen('explore')} onGenerate={startDraft} />;
-    case 'ai-generating':
-      return <AiGeneratingScreen runId={runId} onCancel={() => setScreen('ai-prompt')} onFinished={(next) => { setDraft(next); setScreen('ai-review'); }} />;
-    case 'ai-review':
-      return draft ? <AiReviewScreen draft={draft} onBack={() => setScreen('ai-prompt')} onRegenerate={() => startDraft(brief)} onCreated={openRoadmap} /> : null;
-    case 'manual':
-      return <ManualScreen onBack={() => setScreen('explore')} onCreated={openRoadmap} />;
-    case 'explore':
-      return <ExploreScreen mode={mode} onSelect={selectMain} onListing={openListing} onCreateAi={openAi} onCreateManual={() => setScreen('manual')} />;
-    case 'course':
-      return <CourseScreen mode={mode} listingId={listingId} onBack={() => setScreen('explore')} onOpen={openRoadmap} />;
-    case 'league':
-      return <LeagueScreen mode={mode} onSelect={selectMain} />;
-    case 'streak':
-      return <StreakScreen onBack={() => setScreen('home')} />;
-    case 'profile':
-      return <ProfileScreen mode={mode} onSelect={selectMain} onSettings={() => setScreen('settings')} />;
-    case 'settings':
-      return <SettingsScreen mode={mode} setMode={setMode} email={session?.user.email ?? ''} onBack={() => setScreen('profile')} />;
-  }
+  const { screen } = nav;
+  const render = () => {
+    switch (screen) {
+      case 'welcome':
+        return <WelcomeScreen onStart={() => go('interests')} onSignIn={() => go('sign-in')} />;
+      case 'interests':
+        return <InterestsScreen picked={prefs.interests} onPick={(interests) => setPrefs({ ...prefs, interests })} onBack={() => go('welcome')} onContinue={() => go('commitment')} />;
+      case 'commitment':
+        return <CommitmentScreen prefs={prefs} onChange={setPrefs} onBack={() => go('interests')} onContinue={() => go('sign-up')} />;
+      case 'sign-up':
+        return <AuthScreen prefs={prefs} onBack={() => go('commitment')} onSwitch={() => go('sign-in')} onDone={() => go('home')} />;
+      case 'sign-in':
+        return <AuthScreen onBack={() => go('welcome')} onSwitch={() => go('interests')} onDone={() => go('home')} />;
+      case 'home':
+        return <HomeScreen mode={mode} roadmapId={roadmapId} onSelect={selectMain} onRoadmap={openRoadmap} onPlay={play} onStreak={() => go('streak')} onCreateAi={openAi} onCreateManual={() => go('manual')} onExplore={() => go('explore')} />;
+      case 'roadmap':
+        return <RoadmapScreen mode={mode} roadmapId={roadmapId} onSelect={selectMain} onBack={() => go('home')} onPlay={play} />;
+      case 'step':
+        return <StepScreen stepId={stepId} onClose={() => go('roadmap')} onDone={(done) => { setResult(done); go('complete'); }} />;
+      case 'complete':
+        return result ? <CompleteScreen result={result} onContinue={() => go('roadmap')} /> : null;
+      case 'ai-prompt':
+        return <AiPromptScreen brief={brief} onBack={() => go('explore')} onGenerate={startDraft} />;
+      case 'ai-generating':
+        return <AiGeneratingScreen runId={runId} onCancel={() => go('ai-prompt')} onFinished={(next) => { setDraft(next); go('ai-review'); }} />;
+      case 'ai-review':
+        return draft ? <AiReviewScreen draft={draft} onBack={() => go('ai-prompt')} onRegenerate={() => startDraft(brief)} onCreated={openRoadmap} /> : null;
+      case 'manual':
+        return <ManualScreen onBack={() => go('explore')} onCreated={openRoadmap} />;
+      case 'explore':
+        return <ExploreScreen mode={mode} onSelect={selectMain} onListing={openListing} onCreateAi={openAi} onCreateManual={() => go('manual')} />;
+      case 'course':
+        return <CourseScreen mode={mode} listingId={listingId} onBack={() => go('explore')} onOpen={openRoadmap} />;
+      case 'league':
+        return <LeagueScreen mode={mode} onSelect={selectMain} />;
+      case 'streak':
+        return <StreakScreen onBack={() => go('home')} />;
+      case 'profile':
+        return <ProfileScreen mode={mode} onSelect={selectMain} onSettings={() => go('settings')} />;
+      case 'settings':
+        return <SettingsScreen mode={mode} setMode={setMode} email={session?.user.email ?? ''} onBack={() => go('profile')} />;
+    }
+  };
+
+  return (
+    <ScreenTransition
+      // Sign-in and sign-up are one form that toggles, so switching keeps the typed fields and doesn't transition.
+      screen={screen === 'sign-up' ? 'sign-in' : screen}
+      kind={transitionFor(nav)}
+      background={(THEMED.has(screen) ? palette[mode] : palette.dark).bg}>
+      {render()}
+    </ScreenTransition>
+  );
 }
 
 function Pending({ p, error }: { p: Palette; error?: Error | null }) {
   if (!error) {
     return (
       <View style={styles.pending}>
-        <ActivityIndicator color={p.primary} />
+        <DelayedSpinner color={p.primary} />
       </View>
     );
   }
   return (
-    <View style={styles.pending}>
+    <Animated.View entering={fadeIn} style={styles.pending}>
       <GText weight={600} style={{ color: p.muted, fontSize: 13.5, textAlign: 'center' }}>{error.message}</GText>
       <PrimaryButton label="Try again" onPress={() => queryClient.invalidateQueries()} p={p} compact />
-    </View>
+    </Animated.View>
   );
 }
 
 function ErrorText({ p, error }: { p: Palette; error?: string }) {
-  return error ? <GText weight={600} style={{ color: p.accentText, fontSize: 12.5 }}>{error}</GText> : null;
+  return error ? <ShakeIn key={error} message={error}><GText weight={600} style={{ color: p.accentText, fontSize: 12.5 }}>{error}</GText></ShakeIn> : null;
 }
 
-function Field({ p, label, ...props }: TextInputProps & { p: Palette; label: string }) {
+function Field({ p, label, onFocus, onBlur, ...props }: TextInputProps & { p: Palette; label: string }) {
+  const [focused, setFocused] = useState(false);
   return (
     <Card p={p} style={styles.field}>
       <Overline p={p} style={{ fontSize: 9.5 }}>{label}</Overline>
-      <TextInput placeholderTextColor={p.dim} {...props} style={[styles.fieldInput, { color: p.ink }]} />
+      <TextInput
+        placeholderTextColor={p.dim}
+        {...props}
+        onFocus={(event) => { setFocused(true); onFocus?.(event); }}
+        onBlur={(event) => { setFocused(false); onBlur?.(event); }}
+        style={[styles.fieldInput, { color: p.ink }]}
+      />
+      <FocusRing visible={focused} color={p.primary} radius={16} />
     </Card>
   );
 }
 
-function OnboardingHeader({ progress, onBack, p }: { progress: number; onBack: () => void; p: Palette }) {
+// `from` is where the bar starts when arriving from the screen before; going back fills down from where it was.
+function OnboardingHeader({ progress, from, onBack, p }: { progress: number; from: number; onBack: () => void; p: Palette }) {
+  const last = useSeen('onboarding:progress', progress);
   return (
     <View style={styles.onboardingHeader}>
       <BackButton p={p} onPress={onBack} />
       <View style={{ flex: 1 }}>
-        <ProgressBar value={progress} p={p} color={p.accent} height={6} />
+        <ProgressBar value={progress} initial={last === progress ? from : last} p={p} color={p.accent} height={6} />
       </View>
     </View>
   );
@@ -298,36 +435,51 @@ function OnboardingHeader({ progress, onBack, p }: { progress: number; onBack: (
 
 function WelcomeScreen({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void }) {
   const p = palette.dark;
+  // First impression, under 700ms: halo, quest mark, badges, then copy and actions rise in. Buttons work from frame one.
+  const markIn = usePopIn(true, 60, 0.8, 'pop');
+  const [headlineIn, descriptionIn, dotsIn, actionsIn] = useEntrances(true, 4, 220, 60);
   return (
     <ScreenFrame mode="dark">
       <View style={styles.welcomeBody}>
         <View style={styles.questMarkWrap}>
-          <View style={[styles.questHalo, { borderColor: p.borderStrong }]} />
-          <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.questMark}>
-            <GText weight={800} style={[styles.star, { color: p.bg }]}>★</GText>
-          </LinearGradient>
-          <View style={[styles.heroBadge, styles.heroBadgeTop, { backgroundColor: p.raised, borderColor: p.borderStrong }]}>
-            <GText style={{ fontSize: 19 }}>🔥</GText>
-          </View>
-          <View style={[styles.heroBadge, styles.heroBadgeBottom, { backgroundColor: p.raised, borderColor: p.borderStrong }]}>
-            <Icon name="trophy" color={p.success} size={19} />
-          </View>
+          <SpinningHalo size={136} color={p.borderStrong} />
+          <Animated.View entering={markIn}>
+            <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.questMark}>
+              <GText weight={800} style={[styles.star, { color: p.bg }]}>★</GText>
+            </LinearGradient>
+          </Animated.View>
+          <FloatingBadge style={styles.heroBadgeTop} delay={200} period={2600}>
+            <View style={[styles.heroBadge, { backgroundColor: p.raised, borderColor: p.borderStrong }]}>
+              <GText style={{ fontSize: 19 }}>🔥</GText>
+            </View>
+          </FloatingBadge>
+          <FloatingBadge style={styles.heroBadgeBottom} delay={250} period={3100} sink>
+            <View style={[styles.heroBadge, { backgroundColor: p.raised, borderColor: p.borderStrong }]}>
+              <Icon name="trophy" color={p.success} size={19} />
+            </View>
+          </FloatingBadge>
         </View>
         <View style={styles.centeredCopy}>
-          <GText weight={800} style={[styles.display, { color: p.ink }]}>Turn anything{`\n`}into a quest</GText>
-          <GText weight={500} style={[styles.heroDescription, { color: p.muted }]}>Habits, skills, side projects. Describe a goal and get a roadmap you actually want to finish.</GText>
+          <Animated.View entering={headlineIn}>
+            <GText weight={800} style={[styles.display, { color: p.ink }]}>Turn anything{`\n`}into a quest</GText>
+          </Animated.View>
+          <Animated.View entering={descriptionIn}>
+            <GText weight={500} style={[styles.heroDescription, { color: p.muted }]}>Habits, skills, side projects. Describe a goal and get a roadmap you actually want to finish.</GText>
+          </Animated.View>
         </View>
       </View>
       <View style={styles.welcomeFooter}>
-        <View style={styles.dots}>
+        <Animated.View entering={dotsIn} style={styles.dots}>
           <View style={[styles.longDot, { backgroundColor: p.accent }]} />
           <View style={[styles.dot, { backgroundColor: p.borderStrong }]} />
           <View style={[styles.dot, { backgroundColor: p.borderStrong }]} />
-        </View>
-        <PrimaryButton label="Get started" onPress={onStart} p={p} />
-        <Pressable onPress={onSignIn} style={styles.textButton}>
-          <GText weight={600} style={{ color: p.muted, fontSize: 13.5 }}>I already have an account</GText>
-        </Pressable>
+        </Animated.View>
+        <Animated.View entering={actionsIn} style={{ gap: 13 }}>
+          <PrimaryButton label="Get started" onPress={onStart} p={p} />
+          <Pressable onPress={onSignIn} style={styles.textButton}>
+            <GText weight={600} style={{ color: p.muted, fontSize: 13.5 }}>I already have an account</GText>
+          </Pressable>
+        </Animated.View>
       </View>
     </ScreenFrame>
   );
@@ -339,7 +491,7 @@ function InterestsScreen({ picked, onPick, onBack, onContinue }: { picked: Categ
 
   return (
     <ScreenFrame mode="dark">
-      <OnboardingHeader progress={66} onBack={onBack} p={p} />
+      <OnboardingHeader progress={66} from={33} onBack={onBack} p={p} />
       <ScrollBody contentStyle={styles.onboardingContent} bottomInset={126}>
         <View style={styles.headingBlock}>
           <GText weight={800} style={[styles.screenTitle, { color: p.ink }]}>What do you want{`\n`}to level up?</GText>
@@ -369,7 +521,7 @@ function CommitmentScreen({ prefs, onChange, onBack, onContinue }: { prefs: Pref
   const reminder = prefs.reminder_time !== null;
   return (
     <ScreenFrame mode="dark">
-      <OnboardingHeader progress={100} onBack={onBack} p={p} />
+      <OnboardingHeader progress={100} from={66} onBack={onBack} p={p} />
       <ScrollBody contentStyle={styles.onboardingContent} bottomInset={126}>
         <View style={styles.headingBlock}>
           <GText weight={800} style={[styles.screenTitle, { color: p.ink }]}>Set your daily pace</GText>
@@ -379,23 +531,27 @@ function CommitmentScreen({ prefs, onChange, onBack, onContinue }: { prefs: Pref
           {PACES.map(({ minutes, name, description, goal }) => {
             const picked = prefs.daily_xp_goal === goal;
             return (
-              <Card key={name} p={p} raised={picked} onPress={() => onChange({ ...prefs, daily_xp_goal: goal })} style={[styles.paceCard, picked ? { borderColor: p.primary, borderWidth: 1.5 } : null]}>
-                {picked ? (
-                  <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.minuteTile}>
-                    <GText weight={800} style={{ color: p.bg, fontSize: 17 }}>{minutes}<GText weight={700} style={{ color: p.bg, fontSize: 10 }}>m</GText></GText>
-                  </LinearGradient>
-                ) : (
-                  <View style={[styles.minuteTile, { backgroundColor: p.sunken }]}>
-                    <GText weight={800} style={{ color: p.muted, fontSize: 17 }}>{minutes}<GText weight={700} style={{ color: p.muted, fontSize: 10 }}>m</GText></GText>
-                  </View>
-                )}
+              <Card key={name} p={p} raised={picked} onPress={() => { haptic.select(); onChange({ ...prefs, daily_xp_goal: goal }); }} style={[styles.paceCard, picked ? { borderColor: p.primary, borderWidth: 1.5 } : null]}>
+                {/* Both tiles render; the gradient one fades over the plain one when picked. */}
+                <CrossFade
+                  on={picked}
+                  style={[styles.minuteTile, { backgroundColor: p.sunken }]}
+                  overlay={
+                    <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.minuteTile}>
+                      <GText weight={800} style={{ color: p.bg, fontSize: 17 }}>{minutes}<GText weight={700} style={{ color: p.bg, fontSize: 10 }}>m</GText></GText>
+                    </LinearGradient>
+                  }>
+                  <GText weight={800} style={{ color: p.muted, fontSize: 17 }}>{minutes}<GText weight={700} style={{ color: p.muted, fontSize: 10 }}>m</GText></GText>
+                </CrossFade>
                 <View style={{ flex: 1 }}>
                   <GText weight={700} style={{ color: p.ink, fontSize: 15 }}>{name}</GText>
-                  <GText style={{ color: picked ? p.primaryText : p.muted, fontSize: 12, marginTop: 2 }}>{description}</GText>
+                  <CrossFade on={picked} style={{ marginTop: 2 }} overlay={<GText style={{ color: p.primaryText, fontSize: 12 }}>{description}</GText>}>
+                    <GText style={{ color: p.muted, fontSize: 12 }}>{description}</GText>
+                  </CrossFade>
                 </View>
-                <View style={[styles.radio, picked ? { backgroundColor: p.primary, borderColor: p.primary } : { borderColor: p.borderStrong }]}>
-                  {picked ? <Icon name="check" color={p.bg} size={15} /> : null}
-                </View>
+                <Animated.View style={[styles.radio, picked ? { backgroundColor: p.primary, borderColor: p.primary } : { backgroundColor: `${p.primary}00`, borderColor: p.borderStrong }, colorTransition]}>
+                  <CheckPop visible={picked}><Icon name="check" color={p.bg} size={15} /></CheckPop>
+                </Animated.View>
               </Card>
             );
           })}
@@ -492,13 +648,15 @@ function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, on
   const p = palette[mode];
   const profile = useApi<Profile>('/me');
   const progress = useApi<Progress>('/me/progress');
-  const league = useApi<League>('/me/league');
+  const league = useApi<League>('/me/league', LEAGUE_REFETCH_MS);
   const { roadmaps, focus } = useFocusRoadmap(roadmapId);
   const [createOpen, setCreateOpen] = useState(false);
   const now = new Date();
   const greeting = greetingFor(now.getHours());
   const screen = useWindowDimensions();
   const size = homeSizes[screen.height < 780 ? 'compact' : 'regular'];
+  // The four blocks rise in when Home's data first arrives this session; after that Home opens already in place.
+  const enter = useEnterOnce('home:enter');
   if (!profile.data || !progress.data || !roadmaps.data) {
     return (
       <MainScaffold mode={mode} active="home" onSelect={onSelect}>
@@ -512,17 +670,15 @@ function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, on
   return (
     <MainScaffold mode={mode} active="home" onSelect={onSelect}>
       {/* One line of progress: the level bar takes what's left after the streak and league chips. */}
-      <View style={[styles.homeHeader, { marginBottom: size.gap }]}>
-        <Pressable accessibilityRole="button" onPress={() => onSelect('profile')} style={({ pressed }) => [{ flex: 1 }, pressed && { opacity: 0.8 }]}>
-          <LevelBar p={p} level={level} trackColor={p.border} compact />
-        </Pressable>
+      <Animated.View entering={enter(0)} style={[styles.homeHeader, { marginBottom: size.gap }]}>
+        <HomeLevel p={p} level={level} onPress={() => onSelect('profile')} />
         <View style={[styles.row, { gap: 5 }]}>
-          <HeaderStat p={p} label="Your streak" icon="flame" color={p.streak} value={`${streak.current}`} onPress={onStreak} />
-          <HeaderStat p={p} label="Your league" icon="trophy" color={p.success} value={league.data?.me ? `#${league.data.me.rank}` : '–'} onPress={() => onSelect('league')} />
+          <HeaderStat p={p} label="Your streak" icon="flame" color={p.streak} value={streak.current} seenKey="home:streak" celebrate onPress={onStreak} />
+          <HeaderStat p={p} label="Your league" icon="trophy" color={p.success} value={league.data?.me?.rank} prefix="#" seenKey="home:rank" onPress={() => onSelect('league')} />
         </View>
-      </View>
+      </Animated.View>
 
-      <View style={{ gap: size.gap - 4, marginBottom: size.gap }}>
+      <Animated.View entering={enter(1)} style={{ gap: size.gap - 4, marginBottom: size.gap }}>
         <View style={[styles.row, { gap: 16 }]}>
           <MascotPlaceholder size={size.mascot} />
           <View style={{ flex: 1, gap: 4 }}>
@@ -541,11 +697,14 @@ function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, on
                 <Icon name={LOOKS[focus.category].icon} color={p.muted} size={12} />
                 <GText numberOfLines={1} weight={600} style={{ color: p.muted, fontSize: 11.5, flex: 1 }}>{focus.title}</GText>
               </View>
-              <View style={[styles.row, { gap: 10 }]}>
-                <GText numberOfLines={1} weight={800} style={{ color: p.ink, fontSize: size.stepTitle, flex: 1 }}>{next?.title ?? 'All done for now'}</GText>
-                {next ? <StepMeta icon="clock" label={`${next.minutes} min`} color={p.muted} /> : null}
-                {next ? <StepMeta icon="star" label={`+${next.xp} XP`} color={p.streak} /> : null}
-              </View>
+              {/* A new step since Home last showed (one was just finished) fades in. */}
+              <FadeOnChange seenKey="home:next" id={next?.id ?? 'done'}>
+                <View style={[styles.row, { gap: 10 }]}>
+                  <GText numberOfLines={1} weight={800} style={{ color: p.ink, fontSize: size.stepTitle, flex: 1 }}>{next?.title ?? 'All done for now'}</GText>
+                  {next ? <StepMeta icon="clock" label={`${next.minutes} min`} color={p.muted} /> : null}
+                  {next ? <StepMeta icon="star" label={`+${next.xp} XP`} color={p.streak} /> : null}
+                </View>
+              </FadeOnChange>
             </Pressable>
           ) : (
             <GText weight={700} style={{ color: p.muted, fontSize: size.stepTitle }}>Pick your first quest</GText>
@@ -553,16 +712,16 @@ function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, on
           {focus && next ? <PrimaryButton icon="play" label="Start step" onPress={() => onPlay(focus.id, next.id)} p={p} compact={size.compactButton} style={{ boxShadow: `0 8px 22px ${p.accentDeep}55` }} /> : null}
           {focus ? null : <PrimaryButton icon="plus" label="Create a roadmap" onPress={() => setCreateOpen(true)} p={p} compact={size.compactButton} style={{ boxShadow: `0 8px 22px ${p.accentDeep}55` }} />}
         </Card>
-      </View>
+      </Animated.View>
 
-      <View style={styles.sectionBlock}>
+      <Animated.View entering={enter(2)} style={styles.sectionBlock}>
         <SectionTitle p={p} right={<View style={[styles.timerPill, { backgroundColor: p.surface, borderColor: p.border }]}><Icon name="clock" color={p.muted} size={13} /><GText weight={700} style={{ color: p.muted, fontSize: 11.5 }}>{`${Math.floor(minutesLeft / 60)}h ${minutesLeft % 60}m left`}</GText></View>}>Today&apos;s quests</SectionTitle>
         <Card p={p} style={styles.questList}>
-          {quests.map((quest) => <QuestRow key={quest.code} p={p} height={size.questRow} done={quest.done} title={quest.title} count={quest.target > 1 && !quest.done ? `${quest.progress} of ${quest.target}` : undefined} xp={`+${quest.xp} XP`} />)}
+          {quests.map((quest) => <QuestRow key={quest.code} p={p} height={size.questRow} code={quest.code} done={quest.done} title={quest.title} count={quest.target > 1 ? `${quest.progress} of ${quest.target}` : undefined} xp={`+${quest.xp} XP`} />)}
         </Card>
-      </View>
+      </Animated.View>
 
-      <View style={styles.sectionBlock}>
+      <Animated.View entering={enter(3)} style={styles.sectionBlock}>
         <SectionTitle p={p} right={<SectionLink p={p} icon="plus" label="Add roadmap" onPress={() => setCreateOpen(true)} />}>Your roadmaps</SectionTitle>
         <View style={styles.roadmapCards}>
           {roadmaps.data.map((roadmap) => <RoadmapMini key={roadmap.id} p={p} flat={size.flatRoadmaps} roadmap={roadmap} onPress={() => onRoadmap(roadmap.id)} />)}
@@ -572,19 +731,34 @@ function HomeScreen({ mode, roadmapId, onSelect, onRoadmap, onPlay, onStreak, on
             <GText weight={600} style={{ color: p.muted, fontSize: 12.5 }}>No roadmaps yet. Describe a goal and AI builds one, or pick one from Explore.</GText>
           </Card>
         ) : null}
-      </View>
+      </Animated.View>
       <CreateSheet mode={mode} visible={createOpen} onClose={() => setCreateOpen(false)} onAi={onCreateAi} onManual={onCreateManual} onExplore={onExplore} />
     </MainScaffold>
   );
 }
 
-// Streak and league in Home's header: tinted chips in their role color.
-function HeaderStat({ p, label, icon, color, value, onPress }: { p: Palette; label: string; icon: IconName; color: string; value: string; onPress: () => void }) {
+// Home's level bar. It fills in XP earned since Home last showed it, from empty after a level-up (keyed by level, so a
+// level-up that lands while Home is open starts a fresh bar).
+function HomeLevel({ p, level, onPress }: { p: Palette; level: Level; onPress: () => void }) {
+  const fill = useFillFrom('home:level', (level.into_level / level.span) * 100, level.level);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.headerStat, { backgroundColor: `${color}1F`, borderColor: `${color}38` }, pressed && { opacity: 0.8 }]}>
-      <Icon name={icon} color={color} size={15} />
-      <GText weight={800} style={{ color, fontSize: 13.5 }}>{value}</GText>
-    </Pressable>
+    <PressableScale accessibilityRole="button" onPress={onPress} style={{ flex: 1 }}>
+      <LevelBar key={level.level} p={p} level={level} trackColor={p.border} compact initial={fill.initial} delay={fill.delay} />
+    </PressableScale>
+  );
+}
+
+// Streak and league in Home's header: tinted chips in their role color. A value that changed since Home last showed it
+// rolls in once Home has settled; with `celebrate`, a value that went up (a longer streak) also bumps the icon.
+function HeaderStat({ p, label, icon, color, value, prefix = '', seenKey, celebrate = false, onPress }: { p: Palette; label: string; icon: IconName; color: string; value?: number; prefix?: string; seenKey: string; celebrate?: boolean; onPress: () => void }) {
+  const stat = useLanding(seenKey, value, landing.stat);
+  const rose = celebrate && stat.landed && stat.shown !== undefined && stat.previous !== undefined && stat.shown > stat.previous;
+  const glyph = <Icon name={icon} color={color} size={15} />;
+  return (
+    <PressableScale scale={0.95} accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={[styles.headerStat, { backgroundColor: `${color}1F`, borderColor: `${color}38` }]}>
+      {rose ? <Bump to={1.3}>{glyph}</Bump> : glyph}
+      <RollingText text={stat.shown === undefined ? '–' : `${prefix}${stat.shown}`} pending={stat.pending} landed={stat.landed} weight={800} style={{ color, fontSize: 13.5 }} />
+    </PressableScale>
   );
 }
 
@@ -595,7 +769,8 @@ const levelGradient = [palette.light.primary, palette.light.primaryDeep] as cons
 
 // Home squeezes this bar into its one-line header (`compact`), where the level title is cut short before the XP left.
 // Pass a track that shows on the page background there.
-function LevelBar({ p, level, trackColor, compact = false }: { p: Palette; level: Level; trackColor?: string; compact?: boolean }) {
+// `initial` and `delay` pass through to the bar, for filling in XP earned since the screen last showed it.
+function LevelBar({ p, level, trackColor, compact = false, initial, delay }: { p: Palette; level: Level; trackColor?: string; compact?: boolean; initial?: number; delay?: number }) {
   return (
     <View style={{ flexGrow: 1, flexShrink: 1, gap: compact ? 6 : 7 }}>
       <View style={[styles.spaceBetween, { gap: 8 }]}>
@@ -605,36 +780,64 @@ function LevelBar({ p, level, trackColor, compact = false }: { p: Palette; level
           <GText weight={700} style={{ color: p.streak, fontSize: compact ? 11 : 11.5 }}>{`${level.span - level.into_level} XP to go`}</GText>
         </View>
       </View>
-      <ProgressBar value={(level.into_level / level.span) * 100} p={p} color={p.streak} trackColor={trackColor} height={compact ? 6 : 8} />
+      <ProgressBar value={(level.into_level / level.span) * 100} p={p} color={p.streak} trackColor={trackColor} height={compact ? 6 : 8} initial={initial} delay={delay} />
     </View>
   );
 }
 
-function LevelProgress({ p, level }: { p: Palette; level: Level }) {
-  return (
+// `gained` is the XP just earned: after `delay` the bar fills from where it stood before it. Crossing into a new level
+// fills from empty instead, pops the badge and adds a "Level up!" pill.
+function LevelProgress({ p, level, gained, delay }: { p: Palette; level: Level; gained?: number; delay?: number }) {
+  const before = level.into_level - (gained ?? 0);
+  const levelledUp = before < 0;
+  const badge = (
+    <LinearGradient colors={levelGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.levelBadge}>
+      <GText weight={800} style={{ color: '#fff', fontSize: 15 }}>{level.level}</GText>
+    </LinearGradient>
+  );
+  const row = (
     <View style={styles.levelProgress}>
-      <LinearGradient colors={levelGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.levelBadge}>
-        <GText weight={800} style={{ color: '#fff', fontSize: 15 }}>{level.level}</GText>
-      </LinearGradient>
-      <LevelBar p={p} level={level} />
+      {levelledUp ? <Pop delay={delay}>{badge}</Pop> : badge}
+      <LevelBar p={p} level={level} initial={gained ? (Math.max(0, before) / level.span) * 100 : undefined} delay={delay} />
+    </View>
+  );
+  if (!levelledUp) return row;
+  return (
+    <View style={{ gap: 8 }}>
+      <LevelUpPill p={p} delay={delay} />
+      {row}
     </View>
   );
 }
 
 // One line per quest inside a shared card. A finished quest reads as a win: tinted green with a cheer, not struck through.
-function QuestRow({ p, height, title, count, xp, done = false }: { p: Palette; height: number; title: string; count?: string; xp: string; done?: boolean }) {
+// A quest finished since Home last showed it lands a moment after Home opens: the box pops green, the title and reward
+// cross-fade to their finished look, the row tint fades in and the XP floats up. The keyed parts swap on that change.
+function QuestRow({ p, height, code, title, count, xp, done = false }: { p: Palette; height: number; code: string; title: string; count?: string; xp: string; done?: boolean }) {
   const box = Math.min(24, height - 12);
+  const quest = useLanding(`quest:${code}`, done, landing.quest);
+  const swap = useSwap(quest);
+  const won = quest.shown;
   return (
-    <View style={[styles.questRow, { minHeight: height }, done ? { backgroundColor: `${p.success}1C` } : null]}>
-      <View style={[styles.checkbox, { width: box, height: box, borderRadius: box * 0.3 }, done ? { backgroundColor: p.success, borderColor: p.success } : { backgroundColor: p.sunken, borderColor: p.borderStrong }]}>
-        {done ? <Icon name="check" color={palette.dark.bg} size={box * 0.62} /> : null}
-      </View>
-      <GText numberOfLines={1} weight={done ? 700 : 600} style={{ color: done ? p.success : p.ink, fontSize: 13.5, flex: 1 }}>
-        {title}
-        {count ? <GText weight={600} style={{ color: p.muted, fontSize: 12 }}>{`  ${count}`}</GText> : null}
-      </GText>
-      <GText weight={700} style={{ color: done ? p.success : p.streak, fontSize: 11.5 }}>{done ? `${xp} earned` : xp}</GText>
-    </View>
+    <Animated.View style={[styles.questRow, { minHeight: height, backgroundColor: won ? `${p.success}1C` : `${p.success}00` }, tintFade]}>
+      <Animated.View
+        key={`box-${won}`}
+        entering={won ? swap.pop : swap.fade}
+        exiting={swap.exit}
+        style={[styles.checkbox, { width: box, height: box, borderRadius: box * 0.3 }, won ? { backgroundColor: p.success, borderColor: p.success } : { backgroundColor: p.sunken, borderColor: p.borderStrong }]}>
+        {won ? <Animated.View entering={swap.check}><Icon name="check" color={palette.dark.bg} size={box * 0.62} /></Animated.View> : null}
+      </Animated.View>
+      <Animated.View key={`title-${won}`} entering={swap.fade} exiting={swap.exit} style={{ flex: 1 }}>
+        <GText numberOfLines={1} weight={won ? 700 : 600} style={{ color: won ? p.success : p.ink, fontSize: 13.5 }}>
+          {title}
+          {count && !won ? <GText weight={600} style={{ color: p.muted, fontSize: 12 }}>{`  ${count}`}</GText> : null}
+        </GText>
+      </Animated.View>
+      <Animated.View key={`xp-${won}`} entering={swap.fade} exiting={swap.exit}>
+        <GText weight={700} style={{ color: won ? p.success : p.streak, fontSize: 11.5 }}>{won ? `${xp} earned` : xp}</GText>
+        {won && quest.landed ? <XpFloat text={xp} color={p.streak} /> : null}
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -644,6 +847,9 @@ function RoadmapMini({ p, flat = false, roadmap, onPress }: { p: Palette; flat?:
   const { icon, tint } = LOOKS[roadmap.category];
   const color = p[tint];
   const subtitle = `${roadmap.done_steps} of ${roadmap.total_steps} ${roadmap.kind === 'habit' ? 'today' : 'steps'}`;
+  const percent = roadmap.total_steps ? (roadmap.done_steps / roadmap.total_steps) * 100 : 0;
+  // Steps done since Home last showed this roadmap fill in.
+  const fill = useFillFrom(`roadmap:${roadmap.id}`, percent);
   const text = (
     <View style={flat ? { flex: 1 } : null}>
       <GText numberOfLines={1} weight={700} style={{ color: p.ink, fontSize: flat ? 13 : 13.5 }}>{roadmap.title}</GText>
@@ -663,7 +869,7 @@ function RoadmapMini({ p, flat = false, roadmap, onPress }: { p: Palette; flat?:
           {text}
         </>
       )}
-      <ProgressBar value={roadmap.total_steps ? (roadmap.done_steps / roadmap.total_steps) * 100 : 0} p={p} color={color} height={6} />
+      <ProgressBar value={percent} p={p} color={color} height={6} initial={fill.initial} delay={fill.delay} />
     </Card>
   );
 }
@@ -689,15 +895,30 @@ function RoadmapScreen({ mode, roadmapId, onSelect, onBack, onPlay }: { mode: Th
       </MainScaffold>
     );
   }
-  const data = roadmap.data;
+  return (
+    <MainScaffold mode={mode} active="continue" onSelect={onSelect} noScroll>
+      {/* Keyed so each roadmap keeps its own first visit and "since last time" state. */}
+      <RoadmapPath key={roadmap.data.id} p={p} data={roadmap.data} streak={progress.data?.streak.current ?? 0} exercises={step.data?.exercises.length} onBack={onBack} onPlay={onPlay} />
+    </MainScaffold>
+  );
+}
+
+// The current unit as a path: done steps, the next-step card, locked steps and the unit checkpoint. See `usePathMotion`
+// for when it animates.
+function RoadmapPath({ p, data, streak, exercises, onBack, onPlay }: { p: Palette; data: Roadmap; streak: number; exercises?: number; onBack: () => void; onPlay: (roadmapId: string, stepId: string) => void }) {
+  const next = data.next_step;
   const unit = data.units.find((item) => item.steps.some((candidate) => !candidate.done)) ?? data.units[data.units.length - 1];
   const nextIndex = unit.steps.findIndex((candidate) => candidate.id === next?.id);
   const steps = unit.steps.slice(Math.max(0, nextIndex - 2));
   const map = layoutPath(steps.map((candidate) => candidate.id === next?.id));
   const walked = map.points.slice(0, next ? map.cardIndex + 1 : map.points.length);
-  const exercises = step.data?.exercises.length;
+  const percent = (data.done_steps / data.total_steps) * 100;
+  const motion = usePathMotion(data.id, next?.id ?? null, percent);
+  // The walked path draws on from the node of the step just finished, when it sits before the card in this unit.
+  const finishedAt = steps.findIndex((candidate) => candidate.id === motion.finished);
+  const walkedFrom = finishedAt >= 0 && finishedAt < map.cardIndex ? pathLength(map.points.slice(0, finishedAt + 1)) : undefined;
   return (
-    <MainScaffold mode={mode} active="continue" onSelect={onSelect} noScroll>
+    <>
       <View style={styles.compactHeader}>
         <BackButton p={p} onPress={onBack} />
         <View style={{ flex: 1 }}>
@@ -705,11 +926,11 @@ function RoadmapScreen({ mode, roadmapId, onSelect, onBack, onPlay }: { mode: Th
           <GText numberOfLines={1} style={{ color: p.muted, fontSize: 11.5 }}>{`Unit ${unit.position + 1} of ${data.unit_count} · ${unit.title}`}</GText>
         </View>
         <View style={[styles.streakPill, { backgroundColor: p.surface, borderColor: p.border }]}>
-          <GText style={{ fontSize: 13 }}>🔥</GText><GText weight={700} style={{ color: p.streak, fontSize: 12 }}>{progress.data?.streak.current ?? 0}</GText>
+          <GText style={{ fontSize: 13 }}>🔥</GText><GText weight={700} style={{ color: p.streak, fontSize: 12 }}>{streak}</GText>
         </View>
       </View>
       <View style={styles.roadmapProgress}>
-        <View style={{ flex: 1 }}><ProgressBar value={(data.done_steps / data.total_steps) * 100} p={p} height={6} /></View>
+        <View style={{ flex: 1 }}><ProgressBar value={percent} p={p} height={6} initial={motion.fill.initial} delay={motion.fill.delay} /></View>
         <GText weight={700} style={{ color: p.primaryText, fontSize: 11 }}>{`${data.done_steps} / ${data.total_steps}`}</GText>
       </View>
       {next ? (
@@ -717,40 +938,44 @@ function RoadmapScreen({ mode, roadmapId, onSelect, onBack, onPlay }: { mode: Th
           <View style={[styles.pathMap, { height: map.height }]}>
             <Svg width={MAP_WIDTH} height={map.height} viewBox={`0 0 ${MAP_WIDTH} ${map.height}`} style={StyleSheet.absoluteFill}>
               <Path d={pathThrough(map.points)} stroke={p.border} strokeWidth={16} strokeLinecap="round" fill="none" />
-              <Path d={pathThrough(walked)} stroke={`${p.primary}66`} strokeWidth={16} strokeLinecap="round" fill="none" />
+              <WalkedPath key={next.id} points={walked} from={walkedFrom} stroke={`${p.primary}66`} />
             </Svg>
 
-            {steps.map((candidate, index) => (candidate.id === next.id ? null : <PathNode key={candidate.id} p={p} x={map.points[index].x} y={map.points[index].y} locked={!candidate.done} />))}
+            {steps.map((candidate, index) => (candidate.id === next.id ? null : <PathNode key={candidate.id} p={p} x={map.points[index].x} y={map.points[index].y} locked={!candidate.done} entering={motion.node(index, candidate.id)} />))}
 
-            <GradientCard colors={[p.raised, p.surface]} style={[styles.nextStepCard, { top: map.cardTop, borderColor: p.primaryDeep }]}>
-              <View style={styles.nextStepTop}>
-                <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.playButton}>
-                  <Icon name="play" color={p.bg} size={22} />
-                </LinearGradient>
-                <View style={{ flex: 1 }}>
-                  <GText weight={700} style={[styles.upNext, { color: p.primaryText, backgroundColor: `${p.primary}25` }]}>{`STEP ${data.done_steps + 1} · UP NEXT`}</GText>
-                  <GText numberOfLines={2} weight={800} style={{ color: p.ink, fontSize: 16, marginTop: 6 }}>{next.title}</GText>
-                  {next.summary ? <GText numberOfLines={2} style={{ color: p.muted, fontSize: 11.5, lineHeight: 17, marginTop: 2 }}>{next.summary}</GText> : null}
+            <Animated.View key={next.id} entering={motion.card(map.cardIndex)} style={{ position: 'absolute', left: GUTTER, right: GUTTER, top: map.cardTop }}>
+              <GradientCard colors={[p.raised, p.surface]} style={[styles.nextStepCard, { borderColor: p.primaryDeep }]}>
+                <View style={styles.nextStepTop}>
+                  <PulseButton color={p.primary} size={53} label="Start step" onPress={() => onPlay(data.id, next.id)}>
+                    <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.playButton}>
+                      <Icon name="play" color={p.bg} size={22} />
+                    </LinearGradient>
+                  </PulseButton>
+                  <View style={{ flex: 1 }}>
+                    <GText weight={700} style={[styles.upNext, { color: p.primaryText, backgroundColor: `${p.primary}25` }]}>{`STEP ${data.done_steps + 1} · UP NEXT`}</GText>
+                    <GText numberOfLines={2} weight={800} style={{ color: p.ink, fontSize: 16, marginTop: 6 }}>{next.title}</GText>
+                    {next.summary ? <GText numberOfLines={2} style={{ color: p.muted, fontSize: 11.5, lineHeight: 17, marginTop: 2 }}>{next.summary}</GText> : null}
+                  </View>
                 </View>
-              </View>
-              <View style={[styles.stepMeta, { borderColor: p.borderStrong }]}>
-                <StepMeta icon="clock" label={`${next.minutes} min`} color={p.muted} />
-                <StepMeta icon="checklist" label={exercises === undefined ? 'Exercises' : plural(exercises, 'exercise')} color={p.muted} />
-                <StepMeta icon="star" label={`+${next.xp} XP`} color={p.streak} />
-              </View>
-              <PrimaryButton label="Start step" onPress={() => onPlay(data.id, next.id)} p={p} compact />
-            </GradientCard>
+                <View style={[styles.stepMeta, { borderColor: p.borderStrong }]}>
+                  <StepMeta icon="clock" label={`${next.minutes} min`} color={p.muted} />
+                  <StepMeta icon="checklist" label={exercises === undefined ? 'Exercises' : plural(exercises, 'exercise')} color={p.muted} />
+                  <StepMeta icon="star" label={`+${next.xp} XP`} color={p.streak} />
+                </View>
+                <PrimaryButton label="Start step" onPress={() => onPlay(data.id, next.id)} p={p} compact />
+              </GradientCard>
+            </Animated.View>
 
-            <Landmark p={p} x={map.checkpoint.x} y={map.checkpoint.y} size={62} color={p.success} label={`Unit ${unit.position + 1} checkpoint`}><TrophyIcon color={p.success} /></Landmark>
+            <Landmark p={p} x={map.checkpoint.x} y={map.checkpoint.y} size={62} color={p.success} label={`Unit ${unit.position + 1} checkpoint`} entering={motion.node(steps.length)}><TrophyIcon color={p.success} /></Landmark>
           </View>
         </ScrollBody>
       ) : (
         <View style={styles.pending}>
-          <Landmark p={p} x={65} y={40} size={62} color={p.success} label={data.kind === 'habit' ? 'All done today' : 'Roadmap complete'}><TrophyIcon color={p.success} /></Landmark>
+          <Landmark p={p} x={65} y={40} size={62} color={p.success} label={data.kind === 'habit' ? 'All done today' : 'Roadmap complete'} entering={motion.celebrate ? motion.trophy : undefined} glow={motion.celebrate}><TrophyIcon color={p.success} /></Landmark>
           <GText weight={600} style={{ color: p.muted, fontSize: 13.5, textAlign: 'center', marginTop: 90 }}>{data.kind === 'habit' ? 'Every step is done for today. Come back tomorrow.' : 'You finished every step. Nice work.'}</GText>
         </View>
       )}
-    </MainScaffold>
+    </>
   );
 }
 
@@ -788,24 +1013,14 @@ function layoutPath(isCard: boolean[]) {
   return { points: [...points, checkpoint], cardIndex: isCard.indexOf(true), cardTop, checkpoint, height: y + 70 };
 }
 
-function pathThrough(points: Point[]) {
-  return points
-    .map((point, index) => {
-      if (index === 0) return `M${point.x} ${point.y}`;
-      const previous = points[index - 1];
-      const middle = (previous.y + point.y) / 2;
-      return `C ${previous.x} ${middle} ${point.x} ${middle} ${point.x} ${point.y}`;
-    })
-    .join(' ');
-}
-
 function centeredAt(x: number, y: number, width: number, height = width) {
   return { left: x - width / 2, top: y - height / 2, width, height };
 }
 
-function PathNode({ p, x, y, locked }: { p: Palette; x: number; y: number; locked?: boolean }) {
+function PathNode({ p, x, y, locked, entering }: { p: Palette; x: number; y: number; locked?: boolean; entering?: Entering }) {
   return (
-    <View
+    <Animated.View
+      entering={entering}
       style={[
         styles.pathNode,
         centeredAt(x, y, 52),
@@ -815,7 +1030,7 @@ function PathNode({ p, x, y, locked }: { p: Palette; x: number; y: number; locke
       ]}
     >
       {locked ? <LockIcon color={p.border} /> : <CheckIcon color={p.bg} />}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -828,6 +1043,8 @@ function Landmark({
   labelColor = color,
   label,
   dashed,
+  entering,
+  glow = false,
   children,
 }: {
   p: Palette;
@@ -838,12 +1055,17 @@ function Landmark({
   labelColor?: string;
   label: string;
   dashed?: boolean;
+  entering?: Entering;
+  // A soft one-time glow behind the diamond, for a landmark that was just reached.
+  glow?: boolean;
   children: React.ReactNode;
 }) {
   const width = 130;
   const height = size + 6 + 12;
+  const halo = size * 1.6;
   return (
-    <View style={[styles.landmark, { left: x - width / 2, top: y - height / 2, width }]}>
+    <Animated.View entering={entering} style={[styles.landmark, { left: x - width / 2, top: y - height / 2, width }]}>
+      {glow ? <Glow color={color} size={halo} style={{ top: (size - halo) / 2, left: (width - halo) / 2 }} /> : null}
       <View
         style={[
           styles.landmarkDiamond,
@@ -860,7 +1082,7 @@ function Landmark({
         <View style={{ transform: [{ rotate: '-45deg' }] }}>{children}</View>
       </View>
       <GText weight={700} style={[styles.landmarkLabel, { color: labelColor }]}>{label.toUpperCase()}</GText>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -907,9 +1129,10 @@ function StepScreen({ stepId, onClose, onDone }: { stepId: string; onClose: () =
   const [picked, setPicked] = useState<number>();
   const [revealed, setRevealed] = useState(false);
   const [correct, setCorrect] = useState(0);
+  const [stripSpace, setStripSpace] = useState(0);
   const [startedAt] = useState(Date.now);
   const { busy, error, run } = useAction();
-  const close = <Pressable onPress={onClose}><GText weight={700} style={{ color: p.dim, fontSize: 24 }}>×</GText></Pressable>;
+  const close = <CloseButton p={p} onPress={onClose} />;
   if (!step.data) {
     return (
       <ScreenFrame mode="dark">
@@ -936,6 +1159,7 @@ function StepScreen({ stepId, onClose, onDone }: { stepId: string; onClose: () =
   const check = () => {
     if (picked === quiz?.answer) setCorrect(correct + 1);
     setRevealed(true);
+    (picked === quiz?.answer ? haptic.success : haptic.error)();
   };
   const checking = quiz !== undefined && !revealed;
   return (
@@ -945,34 +1169,44 @@ function StepScreen({ stepId, onClose, onDone }: { stepId: string; onClose: () =
         <View style={{ flex: 1 }}><ProgressBar value={data.exercises.length ? (index / data.exercises.length) * 100 : 0} p={p} height={10} /></View>
         <View style={[styles.row, { gap: 4 }]}><Icon name="star" color={p.streak} size={15} /><GText weight={700} style={{ color: p.streak, fontSize: 13 }}>{data.xp}</GText></View>
       </View>
-      <ScrollBody contentStyle={styles.sessionBody} bottomInset={112}>
-        <View>
-          <Overline p={p} style={{ color: p.primaryText, marginBottom: 8 }}>{exercise ? `Exercise ${index + 1} of ${data.exercises.length}` : 'Step'}</Overline>
-          <GText weight={800} style={{ color: p.ink, fontSize: 23, lineHeight: 30, letterSpacing: -0.4 }}>{exercise ? exercise.prompt : data.title}</GText>
-          {data.summary && !quiz ? <GText style={{ color: p.muted, fontSize: 13.5, lineHeight: 20, marginTop: 8 }}>{data.summary}</GText> : null}
-        </View>
-        {exercise?.kind === 'timer' ? <Timer key={index} p={p} minutes={exercise.minutes} /> : null}
-        {quiz ? (
-          <View style={{ gap: 8 }}>
-            {quiz.options.map((option, number) => {
-              const chosen = picked === number;
-              const tone = revealed && number === quiz.answer ? p.success : revealed && chosen ? p.accent : chosen ? p.primary : undefined;
-              return (
-                <Card key={number} p={p} onPress={revealed ? undefined : () => setPicked(number)} style={[styles.answerCard, tone ? { borderColor: tone, borderWidth: 1.5, backgroundColor: `${tone}24` } : null]}>
-                  <View style={[styles.answerNumber, { backgroundColor: tone ?? p.sunken, borderColor: tone ?? p.borderStrong }]}>
-                    <GText weight={700} style={{ color: tone ? p.bg : p.dim, fontSize: 12 }}>{number + 1}</GText>
-                  </View>
-                  <GText weight={tone ? 700 : 600} style={{ color: chosen && !revealed ? p.primaryText : p.ink, fontSize: 14.5, flex: 1 }}>{option}</GText>
-                </Card>
-              );
-            })}
+      <ContentIn>
+        <ScrollBody contentStyle={styles.sessionBody} bottomInset={112 + (revealed && quiz ? stripSpace : 0)}>
+          <ExerciseSlide index={index}>
+            <View>
+              <Overline p={p} style={{ color: p.primaryText, marginBottom: 8 }}>{exercise ? `Exercise ${index + 1} of ${data.exercises.length}` : 'Step'}</Overline>
+              <GText weight={800} style={{ color: p.ink, fontSize: 23, lineHeight: 30, letterSpacing: -0.4 }}>{exercise ? exercise.prompt : data.title}</GText>
+              {data.summary && !quiz ? <GText style={{ color: p.muted, fontSize: 13.5, lineHeight: 20, marginTop: 8 }}>{data.summary}</GText> : null}
+            </View>
+            {exercise?.kind === 'timer' ? <Timer key={index} p={p} minutes={exercise.minutes} /> : null}
+            {quiz ? (
+              <View style={{ gap: 8 }}>
+                {quiz.options.map((option, number) => (
+                  <AnswerCard
+                    key={number}
+                    p={p}
+                    option={option}
+                    number={number}
+                    chosen={picked === number}
+                    revealed={revealed}
+                    isAnswer={number === quiz.answer}
+                    onPick={() => {
+                      if (picked !== number) haptic.select();
+                      setPicked(number);
+                    }}
+                  />
+                ))}
+              </View>
+            ) : null}
+          </ExerciseSlide>
+          <ErrorText p={p} error={error} />
+        </ScrollBody>
+        <ResultDock p={p} result={revealed && quiz ? { correct: picked === quiz.answer, answer: quiz.options[quiz.answer] ?? '' } : undefined} onSpace={setStripSpace}>
+          {/* The dock pins this footer to the bottom, so it sits in flow inside it. */}
+          <View style={[styles.fixedFooter, { position: 'relative', backgroundColor: p.chrome, borderTopColor: p.border, borderTopWidth: 1 }]}>
+            <PrimaryButton label={checking ? 'Check answer' : last ? 'Finish step' : 'Continue'} onPress={checking ? check : advance} p={p} disabled={busy || (checking && picked === undefined)} tapHaptic={!checking} />
           </View>
-        ) : null}
-        <ErrorText p={p} error={error} />
-      </ScrollBody>
-      <View style={[styles.fixedFooter, { backgroundColor: p.chrome, borderTopColor: p.border, borderTopWidth: 1 }]}>
-        <PrimaryButton label={checking ? 'Check answer' : last ? 'Finish step' : 'Continue'} onPress={checking ? check : advance} p={p} disabled={busy || (checking && picked === undefined)} />
-      </View>
+        </ResultDock>
+      </ContentIn>
     </ScreenFrame>
   );
 }
@@ -987,38 +1221,48 @@ function Timer({ p, minutes }: { p: Palette; minutes: number }) {
   }, [endsAt]);
   const left = endsAt ? Math.max(0, Math.ceil((endsAt - now) / 1000)) : minutes * 60;
   const start = () => {
-    setNow(Date.now());
-    setEndsAt(Date.now() + minutes * 60_000);
+    // One clock reading for both, or the countdown opens a second high (15:01).
+    const startedAt = Date.now();
+    setNow(startedAt);
+    setEndsAt(startedAt + minutes * 60_000);
   };
-  return (
-    <Card p={p} style={styles.timerCard}>
-      <GText weight={800} style={{ color: left === 0 ? p.success : p.ink, fontSize: 44, letterSpacing: -1 }}>{clock(left)}</GText>
-      {endsAt ? null : <Pill label="Start timer" p={p} onPress={start} />}
-    </Card>
-  );
+  return <TimerCard p={p} text={clock(left)} done={left === 0} started={endsAt !== undefined} onStart={start} />;
 }
+
+// Step-complete choreography, in ms from mount. The check pops at 0 (burst at 60); the copy enters at 180, the stats
+// from 260 (XP counts up from 300), the level row at 420 (fills from 460) and the streak at 520 (flame bumps at 700).
+// Continue works from the first frame: nothing waits on the motion. Index 1 is the reduced-motion (fade-only) set.
+const completeAt = { count: 300, fill: 460, flame: 700 };
+const completeEnter = [false, true].map((reduced) => ({
+  title: enterAt(180, reduced),
+  subtitle: enterAt(220, reduced),
+  stats: [0, 1, 2].map((index) => enterAt(260 + index * 50, reduced)),
+  level: enterAt(420, reduced),
+  streak: enterAt(520, reduced),
+}));
 
 function CompleteScreen({ result, onContinue }: { result: StepResult; onContinue: () => void }) {
   const p = palette.dark;
+  const enter = completeEnter[useReducedMotion() ? 1 : 0];
   const profile = useApi<Profile>('/me');
   const { completion, title, correct, quizzes, seconds } = result;
   const quests = completion.quests_completed.map((quest) => quest.title).join(', ');
   return (
     <ScreenFrame mode="dark">
       <View style={styles.completeBody}>
-        <View style={[styles.completeCheck, { backgroundColor: p.success }]}><Icon name="check" color={p.bg} size={60} /></View>
+        <CelebrationCheck p={p} />
         <View style={styles.centeredCopy}>
-          <GText weight={800} style={{ color: p.ink, fontSize: 25 }}>{profile.data ? `Nice work, ${firstName(profile.data)}` : 'Nice work'}</GText>
-          <GText style={{ color: p.muted, fontSize: 13.5, marginTop: 8, textAlign: 'center' }}>{quests ? `${title} done. Quest complete: ${quests}.` : `${title} done.`}</GText>
+          <Animated.View entering={enter.title}><GText weight={800} style={{ color: p.ink, fontSize: 25 }}>{profile.data ? `Nice work, ${firstName(profile.data)}` : 'Nice work'}</GText></Animated.View>
+          <Animated.View entering={enter.subtitle}><GText style={{ color: p.muted, fontSize: 13.5, marginTop: 8, textAlign: 'center' }}>{quests ? `${title} done. Quest complete: ${quests}.` : `${title} done.`}</GText></Animated.View>
         </View>
         <View style={styles.completeStats}>
-          <CompleteStat p={p} value={`+${completion.xp_awarded}`} label="XP earned" color={p.streak} />
-          <CompleteStat p={p} value={quizzes ? `${correct}/${quizzes}` : '–'} label="Correct" color={p.success} />
-          <CompleteStat p={p} value={clock(seconds)} label="Time" color={p.primaryText} />
+          <CompleteStat p={p} value={{ to: completion.xp_awarded, prefix: '+', delay: completeAt.count }} label="XP earned" color={p.streak} entering={enter.stats[0]} />
+          <CompleteStat p={p} value={quizzes ? `${correct}/${quizzes}` : '–'} label="Correct" color={p.success} entering={enter.stats[1]} />
+          <CompleteStat p={p} value={clock(seconds)} label="Time" color={p.primaryText} entering={enter.stats[2]} />
         </View>
         <View style={{ gap: 14 }}>
-          <LevelProgress p={p} level={completion.level} />
-          <View style={styles.streakSecured}><GText style={{ fontSize: 14 }}>🔥</GText><GText weight={600} style={{ color: p.muted, fontSize: 12 }}>Day <GText weight={800} style={{ color: p.streak }}>{completion.streak.current}</GText> streak secured</GText></View>
+          <Animated.View entering={enter.level}><LevelProgress p={p} level={completion.level} gained={completion.xp_awarded} delay={completeAt.fill} /></Animated.View>
+          <Animated.View entering={enter.streak} style={styles.streakSecured}><Bump delay={completeAt.flame}><GText style={{ fontSize: 14 }}>🔥</GText></Bump><GText weight={600} style={{ color: p.muted, fontSize: 12 }}>Day <GText weight={800} style={{ color: p.streak }}>{completion.streak.current}</GText> streak secured</GText></Animated.View>
         </View>
       </View>
       <View style={[styles.fixedFooter, { backgroundColor: p.bg }]}><PrimaryButton label="Continue" onPress={onContinue} p={p} /></View>
@@ -1026,78 +1270,68 @@ function CompleteScreen({ result, onContinue }: { result: StepResult; onContinue
   );
 }
 
-function CompleteStat({ p, value, label, color }: { p: Palette; value: string; label: string; color: string }) {
+// `value` as count props counts up from zero instead of showing a fixed string.
+function CompleteStat({ p, value, label, color, entering }: { p: Palette; value: string | CountProps; label: string; color: string; entering?: Entrance }) {
   return (
-    <Card p={p} style={styles.completeStat}>
-      <GText weight={800} style={{ color, fontSize: 21 }}>{value}</GText>
-      <Overline p={p} style={{ fontSize: 9.5, marginTop: 4 }}>{label}</Overline>
-    </Card>
+    <Animated.View entering={entering} style={{ flex: 1 }}>
+      <Card p={p} style={styles.completeStat}>
+        {typeof value === 'string' ? (
+          <GText weight={800} style={{ color, fontSize: 21 }}>{value}</GText>
+        ) : (
+          <AnimatedCount {...value} style={{ color, fontSize: 21, alignSelf: 'stretch', textAlign: 'center' }} />
+        )}
+        <Overline p={p} style={{ fontSize: 9.5, marginTop: 4 }}>{label}</Overline>
+      </Card>
+    </Animated.View>
   );
 }
 
-// Bottom sheet over Explore for picking a creation flow. Tapping the dimmed backdrop (or Android back) slides it away.
+// Bottom sheet over Home and Explore for picking a creation flow. Drag it down, tap the dimmed backdrop or press
+// Android back to dismiss. Options navigate at once instead of waiting for the sheet to leave.
 function CreateSheet({ mode, visible, onClose, onAi, onManual, onExplore }: { mode: ThemeMode; visible: boolean; onClose: () => void; onAi: (goal?: string) => void; onManual: () => void; onExplore?: () => void }) {
   const p = palette[mode];
   const insets = useSafeAreaInsets();
-  const [progress] = useState(() => new Animated.Value(0));
-
-  useEffect(() => {
-    if (visible) {
-      Animated.timing(progress, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    }
-  }, [visible, progress]);
-
-  const close = () => {
-    Animated.timing(progress, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => onClose());
-  };
-
+  // Four blocks rise 30ms apart, so the content has settled about when the sheet has.
+  const enter = useStagger(4, 30);
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={close}>
-      <View style={styles.sheetRoot}>
-        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(12, 8, 16, 0.62)', opacity: progress }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close" style={StyleSheet.absoluteFill} onPress={close} />
-        </Animated.View>
-        <Animated.View
-          style={[
-            styles.createSheet,
-            {
-              backgroundColor: p.raised,
-              borderTopColor: p.borderStrong,
-              paddingBottom: 22 + insets.bottom,
-              transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [640, 0] }) }],
-            },
-          ]}>
+    <SheetModal visible={visible} onClose={onClose} color={p.raised} style={[styles.createSheet, { backgroundColor: p.raised, borderTopColor: p.borderStrong, paddingBottom: 22 + insets.bottom }]}>
+      {(close) => (
+        <>
           <View style={[styles.sheetHandle, { backgroundColor: p.subtle }]} />
           <GText weight={800} style={{ color: p.ink, fontSize: 21, marginBottom: 14 }}>Start something new</GText>
-          <GradientCard colors={[p.raised, p.surface]} style={[styles.aiCreateCard, { borderColor: p.accent }]}>
-            <Pressable onPress={() => onAi()} style={styles.aiCreateInner}>
-              <LinearGradient colors={[p.accent, p.accentDeep]} style={styles.aiCreateIcon}>
-                <Icon name="sparkles" color={palette.dark.bg} size={24} />
-              </LinearGradient>
-              <View style={{ flex: 1 }}>
-                <View style={[styles.row, { gap: 7 }]}>
-                  <GText weight={800} style={{ color: p.ink, fontSize: 15 }}>Build with AI</GText>
-                  <View style={[styles.fastestBadge, { backgroundColor: p.og }]}><GText weight={800} style={{ color: palette.dark.bg, fontSize: 8.5 }}>FASTEST</GText></View>
+          <Animated.View entering={enter[0]}>
+            <GradientCard colors={[p.raised, p.surface]} style={[styles.aiCreateCard, { borderColor: p.accent }]}>
+              <PressableScale onPress={() => onAi()} style={styles.aiCreateInner}>
+                <LinearGradient colors={[p.accent, p.accentDeep]} style={styles.aiCreateIcon}>
+                  <Icon name="sparkles" color={palette.dark.bg} size={24} />
+                </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <View style={[styles.row, { gap: 7 }]}>
+                    <GText weight={800} style={{ color: p.ink, fontSize: 15 }}>Build with AI</GText>
+                    <View style={[styles.fastestBadge, { backgroundColor: p.og }]}><GText weight={800} style={{ color: palette.dark.bg, fontSize: 8.5 }}>FASTEST</GText></View>
+                  </View>
+                  <GText style={{ color: p.muted, fontSize: 11.5, lineHeight: 17, marginTop: 3 }}>Describe a goal in a sentence. Get units, steps and XP.</GText>
                 </View>
-                <GText style={{ color: p.muted, fontSize: 11.5, lineHeight: 17, marginTop: 3 }}>Describe a goal in a sentence. Get units, steps and XP.</GText>
+              </PressableScale>
+              <View style={styles.suggestionRow}>
+                {['Run a 10k', 'Learn Rust', 'Sleep earlier'].map((label) => <PressableScale key={label} onPress={() => onAi(label)} style={[styles.suggestion, { backgroundColor: `${p.accent}18` }]}><GText weight={600} style={{ color: p.accentText, fontSize: 10.5 }}>{label}</GText></PressableScale>)}
               </View>
-            </Pressable>
-            <View style={styles.suggestionRow}>
-              {['Run a 10k', 'Learn Rust', 'Sleep earlier'].map((label) => <Pressable key={label} onPress={() => onAi(label)} style={[styles.suggestion, { backgroundColor: `${p.accent}18` }]}><GText weight={600} style={{ color: p.accentText, fontSize: 10.5 }}>{label}</GText></Pressable>)}
-            </View>
-          </GradientCard>
+            </GradientCard>
+          </Animated.View>
           <View style={styles.createOptions}>
-            <CreateOption p={p} icon="plus" color={p.primary} title="Build manually" subtitle="Add your own steps and rules." onPress={onManual} />
-            <CreateOption p={p} icon="store" color={p.success} title="From marketplace" subtitle="Fork a ranked roadmap." onPress={onExplore ?? close} />
+            <Animated.View entering={enter[1]} style={{ flex: 1 }}><CreateOption p={p} icon="plus" color={p.primary} title="Build manually" subtitle="Add your own steps and rules." onPress={onManual} /></Animated.View>
+            <Animated.View entering={enter[2]} style={{ flex: 1 }}><CreateOption p={p} icon="store" color={p.success} title="From marketplace" subtitle="Fork a ranked roadmap." onPress={onExplore ?? close} /></Animated.View>
           </View>
-          <Card p={p} onPress={onManual} style={styles.quickHabit}>
-            <IconTile icon="bolt" color={p.streak} backgroundColor={`${p.streak}20`} size={34} rounded={11} textSize={15} />
-            <View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13.5 }}>Quick habit</GText><GText style={{ color: p.muted, fontSize: 11 }}>One thing, every day. 20 seconds to set up.</GText></View>
-            <GText weight={700} style={{ color: p.dim, fontSize: 24 }}>›</GText>
-          </Card>
-        </Animated.View>
-      </View>
-    </Modal>
+          <Animated.View entering={enter[3]}>
+            <Card p={p} onPress={onManual} style={styles.quickHabit}>
+              <IconTile icon="bolt" color={p.streak} backgroundColor={`${p.streak}20`} size={34} rounded={11} textSize={15} />
+              <View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13.5 }}>Quick habit</GText><GText style={{ color: p.muted, fontSize: 11 }}>One thing, every day. 20 seconds to set up.</GText></View>
+              <GText weight={700} style={{ color: p.dim, fontSize: 24 }}>›</GText>
+            </Card>
+          </Animated.View>
+        </>
+      )}
+    </SheetModal>
   );
 }
 
@@ -1136,11 +1370,7 @@ function AiPromptScreen({ brief, onBack, onGenerate }: { brief: Brief; onBack: (
           </View>
           <Card p={p} style={styles.levelPicker}>
             <Overline p={p} style={{ flex: 1 }}>Starting level</Overline>
-            {LEVELS.map(({ level, label }) => (
-              <Pressable key={level} onPress={() => setForm({ ...form, level })} style={[styles.levelChoice, form.level === level ? { backgroundColor: p.primary } : null]}>
-                <GText weight={form.level === level ? 700 : 600} style={{ color: form.level === level ? p.bg : p.muted, fontSize: 10.5 }}>{label}</GText>
-              </Pressable>
-            ))}
+            <SegmentedPicker p={p} options={LEVELS} value={form.level} onChange={(level) => setForm({ ...form, level })} />
           </Card>
           <Overline p={p}>Add context (optional)</Overline>
           <TextInput
@@ -1161,9 +1391,17 @@ function AiPromptScreen({ brief, onBack, onGenerate }: { brief: Brief; onBack: (
 
 function SmallField({ p, label, value, onPress }: { p: Palette; label: string; value: string; onPress: () => void }) {
   return (
-    <Card p={p} onPress={onPress} style={styles.smallField}>
+    <Card
+      p={p}
+      onPress={() => {
+        haptic.select();
+        onPress();
+      }}
+      style={styles.smallField}>
       <Overline p={p} style={{ fontSize: 9.5 }}>{label}</Overline>
-      <GText weight={700} style={{ color: p.ink, fontSize: 13.5, marginTop: 4 }}>{value}</GText>
+      <ValueSwap id={value}>
+        <GText weight={700} style={{ color: p.ink, fontSize: 13.5, marginTop: 4 }}>{value}</GText>
+      </ValueSwap>
     </Card>
   );
 }
@@ -1177,7 +1415,10 @@ function AiGeneratingScreen({ runId, onCancel, onFinished }: { runId: string; on
     refetchInterval: (query) => (query.state.data?.status === 'running' ? 1500 : false),
   });
   useEffect(() => {
-    if (run?.status === 'succeeded' && run.draft) onFinished(run.draft);
+    if (run?.status === 'succeeded' && run.draft) {
+      haptic.success();
+      onFinished(run.draft);
+    }
   }, [run, onFinished]);
   const cancel = () => {
     api(path, 'DELETE').catch(() => undefined);
@@ -1190,13 +1431,13 @@ function AiGeneratingScreen({ runId, onCancel, onFinished }: { runId: string; on
     <ScreenFrame mode="dark">
       <View style={styles.generatingBody}>
         <View style={styles.generatingMarkWrap}>
-          <View style={[styles.spinnerRing, { borderColor: p.borderStrong, borderTopColor: p.accent }]} />
-          <LinearGradient colors={[p.accent, p.accentDeep]} style={styles.generatingMark}><Icon name="sparkles" color={p.bg} size={34} /></LinearGradient>
+          <SpinnerRing running={!failed} style={[styles.spinnerRing, { borderColor: p.borderStrong, borderTopColor: p.accent }]} />
+          <Breathe kind="mark"><LinearGradient colors={[p.accent, p.accentDeep]} style={styles.generatingMark}><Icon name="sparkles" color={p.bg} size={34} /></LinearGradient></Breathe>
         </View>
-        <View style={styles.centeredCopy}>
+        <ValueSwap id={failed ? 'failed' : 'running'} kind="fade" style={styles.centeredCopy}>
           <GText weight={800} style={{ color: p.ink, fontSize: 23 }}>{failed ? 'That draft didn’t work out' : 'Drafting your path'}</GText>
           <GText style={{ color: p.muted, fontSize: 13.5, marginTop: 8 }}>{failed ? 'Go back and try again.' : 'This can take a minute.'}</GText>
-        </View>
+        </ValueSwap>
         <View style={{ width: '100%', gap: 8 }}>
           {rows.map((label, index) => <GenerationRow key={label} p={p} label={label} state={index < phase ? 'done' : index === phase ? 'active' : 'waiting'} />)}
         </View>
@@ -1208,12 +1449,12 @@ function AiGeneratingScreen({ runId, onCancel, onFinished }: { runId: string; on
 
 function GenerationRow({ p, label, state }: { p: Palette; label: string; state: 'done' | 'active' | 'waiting' }) {
   return (
-    <View style={[styles.generationRow, { backgroundColor: p.surface, borderColor: state === 'active' ? p.accent : p.border, opacity: state === 'waiting' ? 0.55 : 1 }]}>
-      <View style={[styles.generationState, state === 'done' ? { backgroundColor: p.success, borderColor: p.success } : { borderColor: state === 'active' ? p.accent : p.borderStrong }]}>
-        {state === 'done' ? <Icon name="check" color={p.bg} size={14} /> : null}
-      </View>
+    <Animated.View style={[styles.generationRow, { backgroundColor: p.surface, borderColor: state === 'active' ? p.accent : p.border, opacity: state === 'waiting' ? 0.55 : 1 }, stateFade]}>
+      <Animated.View style={[styles.generationState, state === 'done' ? { backgroundColor: p.success, borderColor: p.success } : { backgroundColor: 'transparent', borderColor: state === 'active' ? p.accent : p.borderStrong }, stateFade]}>
+        {state === 'done' ? <PopIn><Icon name="check" color={p.bg} size={14} /></PopIn> : null}
+      </Animated.View>
       <GText weight={state === 'active' ? 700 : 600} style={{ color: state === 'done' ? p.success : p.ink, fontSize: 13.2 }}>{label}</GText>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -1229,17 +1470,20 @@ function AiReviewScreen({ draft, onBack, onRegenerate, onCreated }: { draft: Dra
         <View style={{ flex: 1 }}><GText weight={800} style={{ color: p.ink, fontSize: 17 }}>Your draft roadmap</GText><GText style={{ color: p.muted, fontSize: 11.5 }}>Look it over, then start</GText></View>
       </View>
       <ScrollBody contentStyle={styles.reviewBody} bottomInset={110}>
-        <GradientCard colors={[p.raised, p.surface]} style={[styles.summaryCard, { borderColor: p.borderStrong }]}>
-          <GText weight={800} style={{ color: p.ink, fontSize: 18 }}>{draft.title}</GText>
-          <GText style={{ color: p.muted, fontSize: 12, marginTop: 5 }}>{`${plural(draft.units.length, 'unit')} · ${plural(steps, 'step')} · ${draft.kind === 'habit' ? 'daily habit' : 'course'}`}</GText>
-          {draft.summary ? <GText style={{ color: p.muted, fontSize: 12, lineHeight: 18, marginTop: 8 }}>{draft.summary}</GText> : null}
-          <View style={styles.tagRow}><TinyTag label={titleCase(draft.category)} color={p.primaryText} bg={`${p.primary}20`} /><TinyTag label={titleCase(draft.level)} color={p.success} bg={`${p.success}20`} /><TinyTag label={`${draft.total_xp.toLocaleString('en-US')} XP`} color={p.streak} bg={`${p.streak}20`} /></View>
-        </GradientCard>
-        {draft.units.map((unit, index) => <UnitCard key={index} p={p} number={index + 1} unit={unit} defaultOpen={index === 0} />)}
+        {/* The draft the user waited for arrives card by card; opening a unit makes the cards below glide. */}
+        <Enter index={0} layout>
+          <GradientCard colors={[p.raised, p.surface]} style={[styles.summaryCard, { borderColor: p.borderStrong }]}>
+            <GText weight={800} style={{ color: p.ink, fontSize: 18 }}>{draft.title}</GText>
+            <GText style={{ color: p.muted, fontSize: 12, marginTop: 5 }}>{`${plural(draft.units.length, 'unit')} · ${plural(steps, 'step')} · ${draft.kind === 'habit' ? 'daily habit' : 'course'}`}</GText>
+            {draft.summary ? <GText style={{ color: p.muted, fontSize: 12, lineHeight: 18, marginTop: 8 }}>{draft.summary}</GText> : null}
+            <View style={styles.tagRow}><TinyTag label={titleCase(draft.category)} color={p.primaryText} bg={`${p.primary}20`} /><TinyTag label={titleCase(draft.level)} color={p.success} bg={`${p.success}20`} /><TinyTag label={`${draft.total_xp.toLocaleString('en-US')} XP`} color={p.streak} bg={`${p.streak}20`} /></View>
+          </GradientCard>
+        </Enter>
+        {draft.units.map((unit, index) => <Enter key={index} index={index + 1} layout><UnitCard p={p} number={index + 1} unit={unit} defaultOpen={index === 0} /></Enter>)}
         <ErrorText p={p} error={error} />
       </ScrollBody>
       <View style={[styles.reviewFooter, { backgroundColor: p.chrome, borderTopColor: p.border }]}>
-        <Pressable accessibilityLabel="Draft again" disabled={busy} onPress={() => run(onRegenerate)}><IconTile icon="refresh" color={p.accent} backgroundColor={p.surface} size={54} rounded={18} /></Pressable>
+        <RegenerateTile p={p} disabled={busy} onPress={() => run(onRegenerate)} />
         <View style={{ flex: 1 }}><PrimaryButton label="Start this roadmap" onPress={start} p={p} disabled={busy} /></View>
       </View>
     </ScreenFrame>
@@ -1253,14 +1497,21 @@ function TinyTag({ label, color, bg }: { label: string; color: string; bg: strin
 function UnitCard({ p, number, unit, defaultOpen }: { p: Palette; number: number; unit: Draft['units'][number]; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   const minutes = unit.steps.reduce((sum, step) => sum + step.minutes, 0);
+  const toggle = () => {
+    haptic.select();
+    setOpen(!open);
+  };
   return (
-    <Card p={p} onPress={() => setOpen(!open)} style={[styles.unitCard, open ? { borderColor: p.borderStrong } : null]}>
-      <View style={styles.row}>
-        <IconTile glyph={`${number}`} color={p.primary} backgroundColor={`${p.primary}20`} size={31} rounded={10} textSize={13} />
-        <View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13.5 }}>{unit.title}</GText><GText style={{ color: p.muted, fontSize: 11 }}>{`${plural(unit.steps.length, 'step')} · ${minutes} min`}</GText></View>
-        <GText weight={700} style={{ color: p.dim, fontSize: 18 }}>{open ? '⌃' : '⌄'}</GText>
-      </View>
-      {open ? <View style={styles.unitItems}>{unit.steps.map((step, index) => <View key={index} style={[styles.unitItem, { backgroundColor: p.sunken }]}><View style={[styles.bullet, { backgroundColor: p.primary }]} /><GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 12 }}>{step.title}</GText><GText weight={700} style={{ color: p.streak, fontSize: 11 }}>{`+${step.xp}`}</GText></View>)}</View> : null}
+    <Card p={p} onPress={toggle} style={[styles.unitCard, open ? { borderColor: p.borderStrong } : null]}>
+      {/* The first unit arrives open with its card; its steps only animate on later toggles. */}
+      <SkipEnterOnMount>
+        <View style={styles.row}>
+          <IconTile glyph={`${number}`} color={p.primary} backgroundColor={`${p.primary}20`} size={31} rounded={10} textSize={13} />
+          <View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13.5 }}>{unit.title}</GText><GText style={{ color: p.muted, fontSize: 11 }}>{`${plural(unit.steps.length, 'step')} · ${minutes} min`}</GText></View>
+          <Chevron open={open} color={p.dim} />
+        </View>
+        {open ? <UnitSteps style={styles.unitItems}>{unit.steps.map((step, index) => <UnitStep key={index} index={index} style={[styles.unitItem, { backgroundColor: p.sunken }]}><View style={[styles.bullet, { backgroundColor: p.primary }]} /><GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 12 }}>{step.title}</GText><GText weight={700} style={{ color: p.streak, fontSize: 11 }}>{`+${step.xp}`}</GText></UnitStep>)}</UnitSteps> : null}
+      </SkipEnterOnMount>
     </Card>
   );
 }
@@ -1270,22 +1521,25 @@ function ManualScreen({ onBack, onCreated }: { onBack: () => void; onCreated: (i
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState<'habit' | 'course'>('habit');
   const [category, setCategory] = useState<Category>('custom');
-  const [steps, setSteps] = useState<{ title: string; minutes: number }[]>([]);
+  // `key` keeps a removed row's exit on that row; `stagger` spaces out a batch of AI suggestions as they arrive.
+  const [steps, setSteps] = useState<{ key: number; title: string; minutes: number; stagger: number }[]>([]);
   const [newStep, setNewStep] = useState('');
   const [publish, setPublish] = useState(false);
   const { busy, error, run } = useAction();
   const { icon, tint } = LOOKS[category];
   const addStep = () => {
     if (!newStep.trim()) return;
-    setSteps([...steps, { title: newStep.trim(), minutes: 10 }]);
+    setSteps([...steps, { key: newKey(), title: newStep.trim(), minutes: 10, stagger: 0 }]);
+    haptic.light();
     setNewStep('');
   };
   const suggest = () => run(async () => {
     const suggestions = await api<StepSuggestions>('/ai/step-suggestions', 'POST', { title: title.trim(), existing_steps: steps.map((step) => step.title), count: 3 });
-    setSteps([...steps, ...suggestions.steps.map((step) => ({ title: step.title, minutes: step.minutes }))]);
+    setSteps([...steps, ...suggestions.steps.map((step, index) => ({ key: newKey(), title: step.title, minutes: step.minutes, stagger: index }))]);
   });
   const create = () => run(async () => {
-    const roadmap = await send<Roadmap>('/roadmaps', 'POST', { kind, title: title.trim(), category, units: [{ title: title.trim(), steps }] });
+    const units = [{ title: title.trim(), steps: steps.map((step) => ({ title: step.title, minutes: step.minutes })) }];
+    const roadmap = await send<Roadmap>('/roadmaps', 'POST', { kind, title: title.trim(), category, units });
     if (publish) await send('/marketplace/listings', 'POST', { roadmap_id: roadmap.id });
     onCreated(roadmap.id);
   });
@@ -1295,7 +1549,7 @@ function ManualScreen({ onBack, onCreated }: { onBack: () => void; onCreated: (i
         <View style={styles.simpleHeader}><BackButton p={p} onPress={onBack} /><GText weight={700} style={{ color: p.ink, fontSize: 15.5, flex: 1 }}>Build manually</GText></View>
         <ScrollBody contentStyle={styles.formBody} bottomInset={110}>
           <Card p={p} style={styles.manualTitleCard}>
-            <IconTile icon={icon} color={p[tint]} backgroundColor={`${p[tint]}20`} size={46} rounded={16} textSize={22} />
+            <PopOnChange trigger={category}><IconTile icon={icon} color={p[tint]} backgroundColor={`${p[tint]}20`} size={46} rounded={16} textSize={22} /></PopOnChange>
             <View style={{ flex: 1 }}>
               <TextInput value={title} onChangeText={setTitle} placeholder="Name your roadmap" placeholderTextColor={p.dim} style={[styles.titleInput, { color: p.ink }]} />
               <GText style={{ color: p.muted, fontSize: 11.5 }}>{kind === 'habit' ? 'Repeats every day' : 'One step at a time, start to finish'}</GText>
@@ -1315,21 +1569,32 @@ function ManualScreen({ onBack, onCreated }: { onBack: () => void; onCreated: (i
             <Pressable disabled={busy || !title.trim()} onPress={suggest} style={!title.trim() ? { opacity: 0.45 } : null}><GText weight={700} style={{ color: p.accent, fontSize: 11.5 }}>Suggest with AI</GText></Pressable>
           </View>
           <View style={{ gap: 9 }}>
-            {steps.map((step, index) => (
-              <Card key={index} p={p} style={styles.manualStep}>
-                <GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 13 }}>{step.title}</GText>
-                <Pressable hitSlop={8} onPress={() => setSteps(steps.map((item, position) => (position === index ? { ...item, minutes: cycle(MINUTES, item.minutes) } : item)))}>
-                  <GText weight={700} style={{ color: p.streak, fontSize: 11 }}>{`${step.minutes} min`}</GText>
-                </Pressable>
-                <Pressable accessibilityLabel="Remove step" hitSlop={8} onPress={() => setSteps(steps.filter((_, position) => position !== index))}><Icon name="close" color={p.dim} size={15} /></Pressable>
-              </Card>
+            {steps.map((step) => (
+              <ListRow key={step.key} stagger={step.stagger}>
+                <Card p={p} style={styles.manualStep}>
+                  <GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 13 }}>{step.title}</GText>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => {
+                      haptic.select();
+                      setSteps(steps.map((item) => (item.key === step.key ? { ...item, minutes: cycle(MINUTES, item.minutes) } : item)));
+                    }}>
+                    <ValueSwap id={`${step.minutes}`}><GText weight={700} style={{ color: p.streak, fontSize: 11 }}>{`${step.minutes} min`}</GText></ValueSwap>
+                  </Pressable>
+                  {/* A small icon needs a deeper press than a card to show it at all. */}
+                  <PressableScale scale={0.85} accessibilityLabel="Remove step" hitSlop={8} onPress={() => setSteps(steps.filter((item) => item.key !== step.key))}><Icon name="close" color={p.dim} size={15} /></PressableScale>
+                </Card>
+              </ListRow>
             ))}
-            <View style={[styles.addManualStep, { borderColor: p.borderStrong }]}>
+            {/* What sits below the rows glides with them, instead of jumping while they move. */}
+            <Animated.View layout={reflow} style={[styles.addManualStep, { borderColor: p.borderStrong }]}>
               <Icon name="plus" color={p.dim} size={15} />
               <TextInput value={newStep} onChangeText={setNewStep} onSubmitEditing={addStep} submitBehavior="submit" returnKeyType="done" placeholder="Add step" placeholderTextColor={p.dim} style={[styles.addStepInput, { color: p.ink }]} />
-            </View>
+            </Animated.View>
           </View>
-          <Card p={p} style={styles.publishCard}><IconTile icon="globe" color={p.success} backgroundColor={`${p.success}20`} size={35} rounded={12} textSize={16} /><View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13 }}>Publish to marketplace</GText><GText style={{ color: p.muted, fontSize: 11 }}>Others can fork it and rank it</GText></View><Toggle on={publish} p={p} onPress={() => setPublish(!publish)} /></Card>
+          <Animated.View layout={reflow}>
+            <Card p={p} style={styles.publishCard}><IconTile icon="globe" color={p.success} backgroundColor={`${p.success}20`} size={35} rounded={12} textSize={16} /><View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13 }}>Publish to marketplace</GText><GText style={{ color: p.muted, fontSize: 11 }}>Others can fork it and rank it</GText></View><Toggle on={publish} p={p} onPress={() => setPublish(!publish)} /></Card>
+          </Animated.View>
           <ErrorText p={p} error={error} />
         </ScrollBody>
         <View style={[styles.fixedFooter, { backgroundColor: p.chrome, borderTopColor: p.border, borderTopWidth: 1 }]}><PrimaryButton label="Create roadmap" onPress={create} p={p} disabled={busy || !title.trim() || steps.length === 0} /></View>
@@ -1356,45 +1621,82 @@ function ExploreScreen({ mode, onSelect, onListing, onCreateAi, onCreateManual }
   const listings = useApi<Listing[]>(`/marketplace/listings?${params}${query ? `&q=${encodeURIComponent(query)}` : ''}`);
   const featured = useApi<Listing[]>('/marketplace/listings?official=true&limit=1').data?.[0];
   const habits = useApi<Listing[]>('/marketplace/listings?kind=habit&limit=2').data ?? [];
+  // Entrances play on the first visit this session; coming back to the tab shows everything in place.
+  const first = useFirstTime('explore');
+  const [titleIn, ctaIn, searchIn, filtersIn, featuredIn, sectionIn] = useEntrances(first, 6, 0, 30);
+  const rowsIn = useEntrances(first, 6, 0, 30);
+  const listKey = `${filter}|${query}`;
+  const [entranceKey] = useState(listKey);
+  // The last list that loaded stays up until the next one has data, then the two cross-fade (no empty gap).
+  const [shown, setShown] = useState<{ key: string; title: string; data: Listing[]; switched: boolean }>();
+  if (listings.data && listings.data !== shown?.data) {
+    setShown({ key: listKey, title: query ? 'Results' : heading, data: listings.data, switched: shown !== undefined && shown.key !== listKey });
+  }
   return (
     <MainScaffold mode={mode} active="explore" onSelect={onSelect}>
-      <GText weight={800} style={{ color: p.ink, fontSize: 24, letterSpacing: -0.4 }}>Explore</GText>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setCreateOpen(true)}
-        style={({ pressed }) => [styles.aiCtaShadow, { backgroundColor: p.accentShadow }, pressed && { opacity: 0.85, transform: [{ scale: 0.99 }] }]}>
-        <LinearGradient colors={[p.accent, p.accentDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.aiCta}>
-          <View style={[styles.aiCtaIcon, { backgroundColor: `${palette.dark.bg}1A` }]}><SparkleIcon color={palette.dark.bg} /></View>
-          <View style={{ flex: 1 }}>
-            <GText weight={800} style={{ color: palette.dark.bg, fontSize: 18, letterSpacing: -0.2 }}>Add with AI</GText>
-            <GText weight={600} style={{ color: `${palette.dark.bg}B3`, fontSize: 12, marginTop: 2 }}>Describe a goal, get a full roadmap</GText>
-          </View>
-          <View style={[styles.aiCtaPlus, { backgroundColor: palette.dark.bg }]}><GText weight={800} style={{ color: p.accent, fontSize: 22, lineHeight: 24 }}>+</GText></View>
-        </LinearGradient>
-      </Pressable>
-      <View style={[styles.searchBox, { backgroundColor: p.surface, borderColor: p.border }]}>
+      <Animated.View entering={titleIn}>
+        <GText weight={800} style={{ color: p.ink, fontSize: 24, letterSpacing: -0.4 }}>Explore</GText>
+      </Animated.View>
+      <Animated.View entering={ctaIn}>
+        <Pressable accessibilityRole="button" pressRetentionOffset={16} onPress={() => { haptic.light(); setCreateOpen(true); }} style={styles.aiCtaShadow}>
+          {({ pressed }) => (
+            <>
+              {/* A 3D key like PrimaryButton: the lip sits behind the face, which sinks onto it under the finger. */}
+              <View style={[StyleSheet.absoluteFill, { top: 5, borderRadius: 22, backgroundColor: p.accentShadow }]} />
+              <KeyFace pressed={pressed}>
+                <LinearGradient colors={[p.accent, p.accentDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.aiCta}>
+                  <View style={[styles.aiCtaIcon, { backgroundColor: `${palette.dark.bg}1A` }]}><SparkleIcon color={palette.dark.bg} /></View>
+                  <View style={{ flex: 1 }}>
+                    <GText weight={800} style={{ color: palette.dark.bg, fontSize: 18, letterSpacing: -0.2 }}>Add with AI</GText>
+                    <GText weight={600} style={{ color: `${palette.dark.bg}B3`, fontSize: 12, marginTop: 2 }}>Describe a goal, get a full roadmap</GText>
+                  </View>
+                  <Turn turned={pressed} style={[styles.aiCtaPlus, { backgroundColor: palette.dark.bg }]}><GText weight={800} style={{ color: p.accent, fontSize: 22, lineHeight: 24 }}>+</GText></Turn>
+                </LinearGradient>
+              </KeyFace>
+            </>
+          )}
+        </Pressable>
+      </Animated.View>
+      <Animated.View entering={searchIn} style={[styles.searchBox, { backgroundColor: p.surface, borderColor: p.border }]}>
         <Icon name="search" color={p.dim} size={19} />
         <TextInput value={text} onChangeText={(value) => { setText(value); if (!value) setQuery(''); }} onSubmitEditing={() => setQuery(text.trim())} returnKeyType="search" placeholder="Search roadmaps, habits, courses" placeholderTextColor={p.dim} style={[styles.searchInput, { color: p.ink }]} />
-      </View>
-      <View style={styles.filterRow}>{(Object.keys(FILTERS) as Filter[]).map((label) => <Pill key={label} label={label} p={p} selected={filter === label} showCheck={false} onPress={() => setFilter(label)} style={{ minHeight: 36, paddingHorizontal: 13 }} />)}</View>
+      </Animated.View>
+      <Animated.View entering={filtersIn} style={styles.filterRow}>{(Object.keys(FILTERS) as Filter[]).map((label) => <Pill key={label} label={label} p={p} selected={filter === label} showCheck={false} onPress={() => setFilter(label)} style={{ minHeight: 36, paddingHorizontal: 13 }} />)}</Animated.View>
       {featured && !query ? (
-        <Pressable onPress={() => onListing(featured.id)} style={({ pressed }) => pressed && { opacity: 0.85 }}>
-          <LinearGradient colors={[p.primaryDeep, p.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.featureCard}>
-            <View style={styles.featureBubble} />
-            <View style={[styles.row, { gap: 8 }]}><View style={[styles.officialBadge, { backgroundColor: p.og }]}><GText weight={800} style={{ color: palette.dark.bg, fontSize: 9 }}>OG · OFFICIAL</GText></View><GText weight={700} style={{ color: '#E4D9FF', fontSize: 10.5 }}>by the gamify team</GText></View>
-            <GText weight={800} style={styles.featureTitle}>{featured.title}</GText>
-            <GText numberOfLines={2} style={styles.featureDescription}>{featured.summary}</GText>
-            <View style={[styles.row, { gap: 16, marginTop: 11 }]}><GText weight={700} style={{ color: '#FFF3B7', fontSize: 11.5 }}>{`★ ${ratingOf(featured)}`}</GText><GText weight={600} style={{ color: '#E4D9FF', fontSize: 11.5 }}>{learners(featured.installs)}</GText></View>
-          </LinearGradient>
-        </Pressable>
+        <Animated.View entering={featuredIn}>
+          <PressableScale scale={0.98} onPress={() => onListing(featured.id)}>
+            <LinearGradient colors={[p.primaryDeep, p.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.featureCard}>
+              <View style={styles.featureBubble} />
+              <View style={[styles.row, { gap: 8 }]}><View style={[styles.officialBadge, { backgroundColor: p.og }]}><GText weight={800} style={{ color: palette.dark.bg, fontSize: 9 }}>OG · OFFICIAL</GText></View><GText weight={700} style={{ color: '#E4D9FF', fontSize: 10.5 }}>by the gamify team</GText></View>
+              <GText weight={800} style={styles.featureTitle}>{featured.title}</GText>
+              <GText numberOfLines={2} style={styles.featureDescription}>{featured.summary}</GText>
+              <View style={[styles.row, { gap: 16, marginTop: 11 }]}><GText weight={700} style={{ color: '#FFF3B7', fontSize: 11.5 }}>{`★ ${ratingOf(featured)}`}</GText><GText weight={600} style={{ color: '#E4D9FF', fontSize: 11.5 }}>{learners(featured.installs)}</GText></View>
+            </LinearGradient>
+          </PressableScale>
+        </Animated.View>
       ) : null}
-      <View style={styles.sectionBlock}>
-        <SectionTitle p={p}>{query ? 'Results' : heading}</SectionTitle>
-        {listings.data?.map((listing, index) => <RankedRoadmap key={listing.id} p={p} rank={index + 1} listing={listing} onPress={() => onListing(listing.id)} />)}
-        {listings.data?.length === 0 ? <GText style={{ color: p.muted, fontSize: 12.5 }}>Nothing here yet. Build a roadmap and publish it.</GText> : null}
-        {listings.error ? <ErrorText p={p} error={listings.error.message} /> : null}
-        {listings.isPending ? <ActivityIndicator color={p.primary} /> : null}
-      </View>
+      {/* In the stagger too, or its heading shows alone before everything above it fades in. */}
+      <Animated.View entering={sectionIn} style={styles.sectionBlock}>
+        {shown && !listings.error ? (
+          <Dim dimmed={shown.key !== listKey}>
+            <KeyedFade id={shown.key} animate={shown.switched}>
+              <SectionTitle p={p}>{shown.title}</SectionTitle>
+              {shown.data.map((listing, index) => (
+                <Animated.View key={listing.id} entering={shown.key === entranceKey ? rowsIn[index] : undefined}>
+                  <RankedRoadmap p={p} rank={index + 1} listing={listing} onPress={() => onListing(listing.id)} />
+                </Animated.View>
+              ))}
+              {shown.data.length === 0 ? <GText style={{ color: p.muted, fontSize: 12.5 }}>Nothing here yet. Build a roadmap and publish it.</GText> : null}
+            </KeyedFade>
+          </Dim>
+        ) : (
+          <>
+            <SectionTitle p={p}>{query ? 'Results' : heading}</SectionTitle>
+            {listings.error ? <ErrorText p={p} error={listings.error.message} /> : null}
+            {listings.isPending ? <DelayedSpinner color={p.primary} /> : null}
+          </>
+        )}
+      </Animated.View>
       {habits.length > 0 ? (
         <View style={styles.sectionBlock}>
           <SectionTitle p={p}>Quick habits</SectionTitle>
@@ -1457,37 +1759,39 @@ function CourseScreen({ mode, listingId, onBack, onOpen }: { mode: ThemeMode; li
   });
   return (
     <ScreenFrame mode={mode}>
-      <ScrollBody contentStyle={{ paddingBottom: 112 }}>
-        <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.courseHero}>
-          <View style={styles.spaceBetween}><BackButton p={{ ...p, surface: 'rgba(255,255,255,.14)', border: 'rgba(255,255,255,.12)' } as unknown as Palette} onPress={onBack} /></View>
-          <View style={[styles.row, { gap: 8, marginTop: 18 }]}>
-            {data.is_official ? <View style={[styles.officialBadge, { backgroundColor: p.og }]}><GText weight={800} style={{ color: palette.dark.bg, fontSize: 9 }}>OG · OFFICIAL</GText></View> : null}
-            <GText weight={700} style={{ color: '#E4D9FF', fontSize: 10.5 }}>{data.is_official ? 'gamify team' : `by @${nameOf(data.author)}`}</GText>
-          </View>
-          <GText weight={800} style={{ color: '#fff', fontSize: 25, lineHeight: 30, marginTop: 12 }}>{data.title}</GText>
-          <View style={styles.courseStats}><CourseStat value={ratingOf(data)} label="Rating" /><View style={styles.courseStatDivider} /><CourseStat value={formatCount(data.installs)} label="Learners" /><View style={styles.courseStatDivider} /><CourseStat value={data.content.total_xp.toLocaleString('en-US')} label="Total XP" /></View>
-          <View style={styles.featureBubbleLarge} />
-        </LinearGradient>
-        <View style={styles.courseBody}>
-          {data.summary ? <GText style={{ color: p.muted, fontSize: 13, lineHeight: 20 }}>{data.summary}</GText> : null}
-          <View style={styles.tagRow}><TinyTag label={plural(data.content.units.length, 'unit')} color={p.muted} bg={p.surface} /><TinyTag label={data.kind === 'habit' ? 'Daily habit' : 'Course'} color={p.muted} bg={p.surface} /><TinyTag label={titleCase(data.category)} color={p.muted} bg={p.surface} /></View>
-          <SectionTitle p={p}>What&apos;s inside</SectionTitle>
-          <Card p={p} style={styles.courseUnits}>{data.content.units.map((unit, index) => <View key={index} style={[styles.courseUnit, index ? { borderTopColor: p.border, borderTopWidth: 1 } : null]}><IconTile glyph={`${index + 1}`} color={p.primaryText} backgroundColor={`${p.primary}20`} size={30} rounded={9} textSize={12} /><GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 12.5 }}>{unit.title}</GText><GText style={{ color: p.dim, fontSize: 10.5 }}>{plural(unit.steps.length, 'step')}</GText></View>)}</Card>
-          <Card p={p} style={styles.leaderboardCard}>
-            <View style={styles.spaceBetween}><GText weight={800} style={{ color: p.ink, fontSize: 14 }}>Leaderboard</GText><GText weight={700} style={{ color: p.accent, fontSize: 10.5 }}>All time</GText></View>
-            {data.leaderboard.length === 0 ? <GText style={{ color: p.muted, fontSize: 12, marginTop: 12 }}>No one has earned XP here yet.</GText> : null}
-            {data.leaderboard.map((entry, index) => <View key={entry.user_id} style={styles.leaderboardRow}><GText weight={700} style={{ color: index === 0 ? p.streak : p.dim, width: 18, fontSize: 11 }}>{index + 1}</GText><View style={[styles.personDot, { backgroundColor: [p.accent, p.primary, p.success][index] ?? p.raised }]}><GText weight={800} style={{ color: p.bg, fontSize: 10 }}>{initial(entry)}</GText></View><GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 12 }}>{nameOf(entry)}</GText><GText weight={700} style={{ color: p.primaryText, fontSize: 11.5 }}>{entry.xp.toLocaleString('en-US')}</GText></View>)}
-          </Card>
-          {installed && profile.data?.id !== data.author.id ? (
-            <Card p={p} style={styles.ratingCard}>
-              <GText weight={700} style={{ color: p.ink, fontSize: 13, flex: 1 }}>Rate this roadmap</GText>
-              {[1, 2, 3, 4, 5].map((stars) => <Pressable key={stars} accessibilityLabel={plural(stars, 'star')} hitSlop={4} disabled={busy} onPress={() => rate(stars)}><Icon name="star" color={stars <= rating ? p.streak : p.borderStrong} size={22} /></Pressable>)}
+      <ContentIn>
+        <ScrollBody contentStyle={{ paddingBottom: 112 }}>
+          <LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.courseHero}>
+            <View style={styles.spaceBetween}><BackButton p={{ ...p, surface: 'rgba(255,255,255,.14)', border: 'rgba(255,255,255,.12)' } as unknown as Palette} onPress={onBack} /></View>
+            <View style={[styles.row, { gap: 8, marginTop: 18 }]}>
+              {data.is_official ? <View style={[styles.officialBadge, { backgroundColor: p.og }]}><GText weight={800} style={{ color: palette.dark.bg, fontSize: 9 }}>OG · OFFICIAL</GText></View> : null}
+              <GText weight={700} style={{ color: '#E4D9FF', fontSize: 10.5 }}>{data.is_official ? 'gamify team' : `by @${nameOf(data.author)}`}</GText>
+            </View>
+            <GText weight={800} style={{ color: '#fff', fontSize: 25, lineHeight: 30, marginTop: 12 }}>{data.title}</GText>
+            <View style={styles.courseStats}><CourseStat value={ratingOf(data)} label="Rating" /><View style={styles.courseStatDivider} /><CourseStat value={formatCount(data.installs)} label="Learners" /><View style={styles.courseStatDivider} /><CourseStat value={data.content.total_xp.toLocaleString('en-US')} label="Total XP" /></View>
+            <View style={styles.featureBubbleLarge} />
+          </LinearGradient>
+          <View style={styles.courseBody}>
+            {data.summary ? <GText style={{ color: p.muted, fontSize: 13, lineHeight: 20 }}>{data.summary}</GText> : null}
+            <View style={styles.tagRow}><TinyTag label={plural(data.content.units.length, 'unit')} color={p.muted} bg={p.surface} /><TinyTag label={data.kind === 'habit' ? 'Daily habit' : 'Course'} color={p.muted} bg={p.surface} /><TinyTag label={titleCase(data.category)} color={p.muted} bg={p.surface} /></View>
+            <SectionTitle p={p}>What&apos;s inside</SectionTitle>
+            <Card p={p} style={styles.courseUnits}>{data.content.units.map((unit, index) => <View key={index} style={[styles.courseUnit, index ? { borderTopColor: p.border, borderTopWidth: 1 } : null]}><IconTile glyph={`${index + 1}`} color={p.primaryText} backgroundColor={`${p.primary}20`} size={30} rounded={9} textSize={12} /><GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 12.5 }}>{unit.title}</GText><GText style={{ color: p.dim, fontSize: 10.5 }}>{plural(unit.steps.length, 'step')}</GText></View>)}</Card>
+            <Card p={p} style={styles.leaderboardCard}>
+              <View style={styles.spaceBetween}><GText weight={800} style={{ color: p.ink, fontSize: 14 }}>Leaderboard</GText><GText weight={700} style={{ color: p.accent, fontSize: 10.5 }}>All time</GText></View>
+              {data.leaderboard.length === 0 ? <GText style={{ color: p.muted, fontSize: 12, marginTop: 12 }}>No one has earned XP here yet.</GText> : null}
+              {data.leaderboard.map((entry, index) => <View key={entry.user_id} style={styles.leaderboardRow}><GText weight={700} style={{ color: index === 0 ? p.streak : p.dim, width: 18, fontSize: 11 }}>{index + 1}</GText><View style={[styles.personDot, { backgroundColor: [p.accent, p.primary, p.success][index] ?? p.raised }]}><GText weight={800} style={{ color: p.bg, fontSize: 10 }}>{initial(entry)}</GText></View><GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 12 }}>{nameOf(entry)}</GText><GText weight={700} style={{ color: p.primaryText, fontSize: 11.5 }}>{entry.xp.toLocaleString('en-US')}</GText></View>)}
             </Card>
-          ) : null}
-          <ErrorText p={p} error={error} />
-        </View>
-      </ScrollBody>
-      <View style={[styles.courseFooter, { backgroundColor: p.chrome, borderTopColor: p.border }]}><View style={{ flex: 1 }}><PrimaryButton label={installed ? 'Open roadmap' : 'Add to my roadmaps'} onPress={install} p={p} disabled={busy} /></View></View>
+            {installed && profile.data?.id !== data.author.id ? (
+              <Card p={p} style={styles.ratingCard}>
+                <GText weight={700} style={{ color: p.ink, fontSize: 13, flex: 1 }}>Rate this roadmap</GText>
+                {[1, 2, 3, 4, 5].map((stars) => <Pressable key={stars} accessibilityLabel={plural(stars, 'star')} hitSlop={4} disabled={busy} onPress={() => { haptic.light(); rate(stars); }}><RatingStar index={stars} rating={rating} on={p.streak} off={p.borderStrong} size={22} /></Pressable>)}
+              </Card>
+            ) : null}
+            <ErrorText p={p} error={error} />
+          </View>
+        </ScrollBody>
+        <View style={[styles.courseFooter, { backgroundColor: p.chrome, borderTopColor: p.border }]}><View style={{ flex: 1 }}><PrimaryButton label={installed ? 'Open roadmap' : 'Add to my roadmaps'} onPress={install} p={p} disabled={busy} /></View></View>
+      </ContentIn>
     </ScreenFrame>
   );
 }
@@ -1498,8 +1802,13 @@ function CourseStat({ value, label }: { value: string; label: string }) {
 
 function LeagueScreen({ mode, onSelect }: { mode: ThemeMode; onSelect: (tab: MainTab) => void }) {
   const p = palette[mode];
-  const league = useApi<League>('/me/league');
+  const league = useApi<League>('/me/league', LEAGUE_REFETCH_MS);
   const [now] = useState(Date.now);
+  const first = useFirstTime('league');
+  const trophyIn = usePopIn(first, 0, 0.7, 'pop');
+  // Rows past the tenth enter with the tenth, so a long league never staggers past ~300ms.
+  const rowsIn = useEntrances(first, 11, 60, 30);
+  const lastRank = useSeen('league:rank', league.data?.me?.rank);
   if (!league.data) {
     return (
       <MainScaffold mode={mode} active="league" onSelect={onSelect}>
@@ -1512,25 +1821,29 @@ function LeagueScreen({ mode, onSelect }: { mode: ThemeMode; onSelect: (tab: Mai
   const above = me ? entries.find((entry) => entry.rank === me.rank - 1) : undefined;
   const chase = me && above ? `${above.xp - me.xp} XP from #${above.rank}` : null;
   const timeLeft = `${plural(daysLeft, 'day')} left`;
+  const climbed = me && lastRank !== undefined && me.rank < lastRank;
   return (
     <MainScaffold mode={mode} active="league" onSelect={onSelect}>
-      <View style={styles.leagueHero}><LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.trophyBadge}><Icon name="trophy" color={p.bg} size={36} /></LinearGradient><GText weight={800} style={{ color: p.ink, fontSize: 21, marginTop: 10 }}>{`${tier_name} League`}</GText><GText style={{ color: p.muted, fontSize: 12.5, marginTop: 7 }}>{promote > 0 ? `Top ${promote} advance · ${timeLeft}` : `${timeLeft} · resets Monday`}</GText></View>
+      <View style={styles.leagueHero}><Animated.View entering={trophyIn}><LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.trophyBadge}><Icon name="trophy" color={p.bg} size={36} /></LinearGradient></Animated.View><GText weight={800} style={{ color: p.ink, fontSize: 21, marginTop: 10 }}>{`${tier_name} League`}</GText><GText style={{ color: p.muted, fontSize: 12.5, marginTop: 7 }}>{promote > 0 ? `Top ${promote} advance · ${timeLeft}` : `${timeLeft} · resets Monday`}</GText></View>
       <View style={{ gap: 8, marginTop: 14 }}>
         {me ? null : <GText style={{ color: p.muted, fontSize: 12.5, textAlign: 'center' }}>{`Finish a step to join this week's ${tier_name} League.`}</GText>}
-        {entries.map((entry) => {
+        {entries.map((entry, index) => {
           const you = entry.user_id === me?.user_id;
           const podium = [p.accent, p.success, p.primary][entry.rank - 1];
+          const rankText = (rank: number) => <GText weight={800} style={{ color: rank === 1 ? p.streak : p.dim, width: 20 }}>{rank}</GText>;
           return (
-            <Fragment key={entry.user_id}>
+            <Animated.View key={entry.user_id} entering={rowsIn[Math.min(index, 10)]} style={{ gap: 8 }}>
               {entry.rank === entries.length - demote + 1 ? <ZoneLine p={p} label="DEMOTION LINE" color={p.dim} /> : null}
               <Card p={p} style={[styles.playerRow, you ? { borderColor: p.primary, borderWidth: 1.5 } : null]}>
-                <GText weight={800} style={{ color: entry.rank === 1 ? p.streak : p.dim, width: 20 }}>{entry.rank}</GText>
+                {/* Your row flashes green and its rank rolls when you've climbed since you last looked. */}
+                {you ? <FlashRing play={!!climbed} color={p.success} radius={16} inset={1.5} /> : null}
+                {you ? <Swap value={entry.rank} initial={lastRank} motion="roll" render={rankText} /> : rankText(entry.rank)}
                 <View style={[styles.playerAvatar, { backgroundColor: podium ?? p.raised }]}><GText weight={800} style={{ color: podium ? p.bg : p.ink, fontSize: 11 }}>{initial(entry)}</GText></View>
                 <View style={{ flex: 1 }}><GText weight={you ? 800 : 700} style={{ color: p.ink, fontSize: 13 }}>{you ? 'You' : nameOf(entry)}</GText>{you && chase ? <GText weight={600} style={{ color: p.primaryText, fontSize: 10 }}>{chase}</GText> : null}</View>
                 <GText weight={700} style={{ color: you ? p.primaryText : p.muted, fontSize: 12 }}>{entry.xp.toLocaleString('en-US')}</GText>
               </Card>
               {entry.rank === promote ? <ZoneLine p={p} label="PROMOTION LINE" color={p.success} /> : null}
-            </Fragment>
+            </Animated.View>
           );
         })}
       </View>
@@ -1554,6 +1867,9 @@ function StreakScreen({ onBack }: { onBack: () => void }) {
   const activity = useApi<DayXp[]>('/me/activity');
   const profile = useApi<Profile>('/me');
   const { busy, error, run } = useAction();
+  const insets = useSafeAreaInsets();
+  // Each successful freeze replays the snowflake turn and the border flash (they remount on this key).
+  const [freezesUsed, setFreezesUsed] = useState(0);
   const header = <View style={styles.spaceBetween}><GText weight={800} style={{ color: p.dim, opacity: 0.5, fontSize: 24 }}>{profile.data?.display_name ?? ''}</GText><Pressable onPress={onBack}><GText weight={800} style={{ color: p.dim, fontSize: 24 }}>×</GText></Pressable></View>;
   if (!progress.data) {
     return (
@@ -1570,25 +1886,39 @@ function StreakScreen({ onBack }: { onBack: () => void }) {
     : current === 0
       ? ['Start a streak', 'Finish one step today and day one is on the board.']
       : [`${current}-day streak`, active_today ? 'You showed up today. Come back tomorrow to keep it going.' : 'Finish a step today to keep it going.'];
+  // The win lands when the server confirms, before the refetch rewrites the copy.
+  const freeze = () => run(async () => {
+    await api('/me/streak/freeze', 'POST');
+    setFreezesUsed((count) => count + 1);
+    haptic.success();
+    await queryClient.invalidateQueries();
+  });
   return (
-    <ScreenFrame mode="dark" background={p.overlay} bottomColor={p.raised}>
+    // No bottomColor: the sheet's own color reaches under the home indicator, and leaves with it when dragged away.
+    <ScreenFrame mode="dark" background={p.overlay}>
       <View style={styles.streakBackdrop}>{header}<View style={[styles.skeletonLarge, { backgroundColor: p.sunken }]} /><View style={[styles.skeletonSmall, { backgroundColor: p.sunken }]} /></View>
-      <View style={[styles.streakSheet, { backgroundColor: p.raised, borderTopColor: p.borderStrong }]}>
+      <SheetPanel onDismiss={onBack} below={insets.bottom} color={p.raised} style={[styles.streakSheet, { backgroundColor: p.raised, borderTopColor: p.borderStrong }]}>
         <View style={[styles.sheetHandle, { backgroundColor: p.subtle }]} />
-        <GText style={styles.bigFlame}>🔥</GText>
+        {/* The flame ignites once the sheet is mostly up, then breathes. */}
+        <PopIn delay={120} style={{ alignSelf: 'center' }}><Breathe kind="flame" delay={570}><GText style={styles.bigFlame}>🔥</GText></Breathe></PopIn>
         <GText weight={800} style={{ color: p.ink, textAlign: 'center', fontSize: 23 }}>{title}</GText>
         <GText style={{ color: p.muted, textAlign: 'center', fontSize: 12.5, lineHeight: 19, marginTop: 8 }}>{body}</GText>
         <View style={styles.weekRow}>
           {week.map((day, index) => {
             const today = index === week.length - 1;
             const active = day.xp > 0;
-            return <View key={day.day} style={[styles.dayBox, { backgroundColor: active ? `${p.streak}25` : p.sunken, borderColor: today ? p.dim : 'transparent', borderStyle: today ? 'dashed' : 'solid' }]}><GText weight={700} style={{ color: active ? p.streak : p.dim, fontSize: 10 }}>{new Date(`${day.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'narrow' })}</GText></View>;
+            return <Appear key={day.day} index={index} style={[styles.dayBox, { backgroundColor: active ? `${p.streak}25` : p.sunken, borderColor: today ? p.dim : 'transparent', borderStyle: today ? 'dashed' : 'solid' }]}><GText weight={700} style={{ color: active ? p.streak : p.dim, fontSize: 10 }}>{new Date(`${day.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'narrow' })}</GText></Appear>;
           })}
         </View>
-        <Card p={p} style={[styles.streakOption, at_risk ? { borderColor: p.primary } : null]}><IconTile icon="snowflake" color={p.primary} backgroundColor={`${p.primary}20`} size={44} rounded={13} /><View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13.5 }}>Use a streak freeze</GText><GText style={{ color: p.primaryText, fontSize: 11 }}>{at_risk ? `${freezes} left in your pack` : `Saves a missed day · ${freezes} left`}</GText></View><Pressable disabled={busy || !at_risk || freezes === 0} onPress={() => run(() => send('/me/streak/freeze', 'POST'))} style={[styles.useButton, { backgroundColor: p.primary, opacity: at_risk && freezes > 0 ? 1 : 0.4 }]}><GText weight={800} style={{ color: p.bg, fontSize: 12 }}>Use</GText></Pressable></Card>
+        <Card p={p} style={[styles.streakOption, at_risk ? { borderColor: p.primary } : null]}>
+          <TurnOnce key={freezesUsed} play={freezesUsed > 0}><IconTile icon="snowflake" color={p.primary} backgroundColor={`${p.primary}20`} size={44} rounded={13} /></TurnOnce>
+          <View style={{ flex: 1 }}><GText weight={700} style={{ color: p.ink, fontSize: 13.5 }}>Use a streak freeze</GText><GText style={{ color: p.primaryText, fontSize: 11 }}>{at_risk ? `${freezes} left in your pack` : `Saves a missed day · ${freezes} left`}</GText></View>
+          <Pressable disabled={busy || !at_risk || freezes === 0} onPress={freeze} style={[styles.useButton, { backgroundColor: p.primary, opacity: at_risk && freezes > 0 ? 1 : 0.4 }]}><GText weight={800} style={{ color: p.bg, fontSize: 12 }}>Use</GText></Pressable>
+          <BorderFlash key={`flash-${freezesUsed}`} play={freezesUsed > 0} color={p.primary} radius={18} />
+        </Card>
         <ErrorText p={p} error={error} />
         <Pressable onPress={onBack} style={styles.textButton}><GText weight={700} style={{ color: p.dim, fontSize: 12.5 }}>{at_risk ? 'Start fresh instead' : 'Close'}</GText></Pressable>
-      </View>
+      </SheetPanel>
     </ScreenFrame>
   );
 }
@@ -1599,6 +1929,14 @@ function ProfileScreen({ mode, onSelect, onSettings }: { mode: ThemeMode; onSele
   const progress = useApi<Progress>('/me/progress');
   const roadmaps = useApi<RoadmapSummary[]>('/roadmaps');
   const activity = useApi<DayXp[]>('/me/activity');
+  const { width } = useWindowDimensions();
+  // Heatmap cells per row: the card's inner width (frame capped at 480, gutters, padding, border) over 16pt cells + 4pt gaps.
+  const columns = Math.max(1, Math.floor((Math.min(width, 480) - GUTTER * 2 - 32 + 4) / 20));
+  const first = useFirstTime('profile');
+  const avatarIn = usePopIn(first, 0, 0.85, 'snap');
+  const bubbleIn = usePopIn(first, 120, 0.6, 'pop');
+  const statsIn = useEntrances(first, 3, 80, 40);
+  const cellsIn = useGridEntrance(first, activity.data?.length ?? 0, columns, 160);
   if (!profile.data || !progress.data) {
     return (
       <MainScaffold mode={mode} active="profile" onSelect={onSelect}>
@@ -1611,16 +1949,16 @@ function ProfileScreen({ mode, onSelect, onSettings }: { mode: ThemeMode; onSele
   const joined = new Date(me.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   return (
     <MainScaffold mode={mode} active="profile" onSelect={onSelect}>
-      <View style={styles.spaceBetween}><GText weight={800} style={{ color: p.ink, fontSize: 24, letterSpacing: -0.4 }}>Profile</GText><Pressable accessibilityLabel="Settings" onPress={onSettings}><IconTile icon="gear" color={p.muted} backgroundColor={p.surface} size={38} rounded={12} /></Pressable></View>
-      <View style={styles.profileIdentity}><View><LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.profileAvatar}><GText weight={800} style={{ color: p.bg, fontSize: 28 }}>{initial(me)}</GText></LinearGradient><View style={[styles.levelBubble, { backgroundColor: palette.light.primaryDeep, borderColor: p.bg }]}><GText weight={800} style={{ color: '#fff', fontSize: 9 }}>{progress.data.level.level}</GText></View></View><View style={{ flex: 1 }}><GText weight={800} style={{ color: p.ink, fontSize: 20 }}>{me.display_name ?? 'You'}</GText><GText style={{ color: p.muted, fontSize: 11.5, marginTop: 2 }}>{`${me.handle ? `@${me.handle} · ` : ''}joined ${joined}`}</GText></View></View>
-      <View style={styles.profileStats}><ProfileStat p={p} value={`${progress.data.streak.current}`} label="Streak" color={p.streak} /><ProfileStat p={p} value={formatCount(progress.data.total_xp)} label="Total XP" color={p.primaryText} /><ProfileStat p={p} value={`${finished}`} label="Finished" color={p.success} /></View>
-      <Card p={p} style={styles.activityCard}><View style={styles.spaceBetween}><GText weight={700} style={{ color: p.ink, fontSize: 13 }}>Last 4 weeks</GText><GText style={{ color: p.dim, fontSize: 10.5 }}>XP per day</GText></View><View style={styles.heatmap}>{activity.data?.map((day) => <View key={day.day} style={[styles.heatCell, { backgroundColor: day.xp === 0 ? p.sunken : day.xp >= me.daily_xp_goal ? p.primary : `${p.primary}80` }]} />)}</View></Card>
+      <View style={styles.spaceBetween}><GText weight={800} style={{ color: p.ink, fontSize: 24, letterSpacing: -0.4 }}>Profile</GText><PressableScale scale={0.94} accessibilityLabel="Settings" onPress={onSettings}><IconTile icon="gear" color={p.muted} backgroundColor={p.surface} size={38} rounded={12} /></PressableScale></View>
+      <View style={styles.profileIdentity}><View><Animated.View entering={avatarIn}><LinearGradient colors={[p.primary, p.primaryDeep]} style={styles.profileAvatar}><GText weight={800} style={{ color: p.bg, fontSize: 28 }}>{initial(me)}</GText></LinearGradient></Animated.View><Animated.View entering={bubbleIn} style={[styles.levelBubble, { backgroundColor: palette.light.primaryDeep, borderColor: p.bg }]}><GText weight={800} style={{ color: '#fff', fontSize: 9 }}>{progress.data.level.level}</GText></Animated.View></View><View style={{ flex: 1 }}><GText weight={800} style={{ color: p.ink, fontSize: 20 }}>{me.display_name ?? 'You'}</GText><GText style={{ color: p.muted, fontSize: 11.5, marginTop: 2 }}>{`${me.handle ? `@${me.handle} · ` : ''}joined ${joined}`}</GText></View></View>
+      <View style={styles.profileStats}><ProfileStat p={p} value={`${progress.data.streak.current}`} label="Streak" color={p.streak} entering={statsIn[0]} /><ProfileStat p={p} value={formatCount(progress.data.total_xp)} label="Total XP" color={p.primaryText} entering={statsIn[1]} /><ProfileStat p={p} value={`${finished}`} label="Finished" color={p.success} entering={statsIn[2]} /></View>
+      <Card p={p} style={styles.activityCard}><View style={styles.spaceBetween}><GText weight={700} style={{ color: p.ink, fontSize: 13 }}>Last 4 weeks</GText><GText style={{ color: p.dim, fontSize: 10.5 }}>XP per day</GText></View><View style={styles.heatmap}>{activity.data?.map((day, index) => <Animated.View key={day.day} entering={cellsIn[index]} style={[styles.heatCell, { backgroundColor: day.xp === 0 ? p.sunken : day.xp >= me.daily_xp_goal ? p.primary : `${p.primary}80` }]} />)}</View></Card>
     </MainScaffold>
   );
 }
 
-function ProfileStat({ p, value, label, color }: { p: Palette; value: string; label: string; color: string }) {
-  return <Card p={p} style={styles.profileStat}><GText weight={800} style={{ color, fontSize: 19 }}>{value}</GText><Overline p={p} style={{ fontSize: 9, marginTop: 5 }}>{label}</Overline></Card>;
+function ProfileStat({ p, value, label, color, entering }: { p: Palette; value: string; label: string; color: string; entering?: ReturnType<typeof useEntrances>[number] }) {
+  return <Animated.View entering={entering} style={{ flex: 1 }}><Card p={p} style={styles.profileStat}><GText weight={800} style={{ color, fontSize: 19 }}>{value}</GText><Overline p={p} style={{ fontSize: 9, marginTop: 5 }}>{label}</Overline></Card></Animated.View>;
 }
 
 function SettingsScreen({ mode, setMode, email, onBack }: { mode: ThemeMode; setMode: (mode: ThemeMode) => void; email: string; onBack: () => void }) {
@@ -1642,7 +1980,8 @@ function SettingsScreen({ mode, setMode, email, onBack }: { mode: ThemeMode; set
   return (
     <ScreenFrame mode={mode}>
       {header}
-      <ScrollBody contentStyle={styles.settingsBody}>
+      {/* Keyed by theme: a fresh body recolors in one frame, where the pressables would otherwise fade their old colors. */}
+      <ScrollBody key={mode} contentStyle={styles.settingsBody}>
         <Overline p={p}>Appearance</Overline>
         <View style={styles.themeChoices}><ThemeChoice label="Light" active={mode === 'light'} p={p} preview="light" onPress={() => setMode('light')} /><ThemeChoice label="Dark" active={mode === 'dark'} p={p} preview="dark" onPress={() => setMode('dark')} /><ThemeChoice label="System" active={false} p={p} preview="system" onPress={() => setMode('dark')} /></View>
         <SettingsGroup p={p} title="Account">
@@ -1664,7 +2003,7 @@ function SettingsScreen({ mode, setMode, email, onBack }: { mode: ThemeMode; set
 function ThemeChoice({ label, active, p, preview, onPress }: { label: string; active: boolean; p: Palette; preview: ThemeMode | 'system'; onPress: () => void }) {
   const previewBg = preview === 'dark' ? palette.dark.bg : preview === 'light' ? palette.light.surface : '#F7F1F5';
   const previewInk = preview === 'dark' ? palette.dark.primary : preview === 'light' ? palette.light.primary : palette.dark.bg;
-  return <Pressable onPress={onPress} style={[styles.themeChoice, { backgroundColor: p.surface, borderColor: active ? p.primary : p.border, borderWidth: active ? 1.5 : 1 }]}><View style={[styles.themePreview, { backgroundColor: previewBg, borderColor: p.border }]}><View style={[styles.previewBar, { backgroundColor: preview === 'system' ? palette.light.surface : p.border }]} /><View style={[styles.previewAccent, { backgroundColor: previewInk }]} /></View><GText weight={active ? 700 : 600} style={{ color: active ? p.primaryText : p.muted, fontSize: 11 }}>{label}</GText></Pressable>;
+  return <PressableScale onPress={() => { haptic.select(); onPress(); }} style={[styles.themeChoice, { backgroundColor: p.surface, borderColor: active ? p.primary : p.border, borderWidth: active ? 1.5 : 1 }]}><View style={[styles.themePreview, { backgroundColor: previewBg, borderColor: p.border }]}><View style={[styles.previewBar, { backgroundColor: preview === 'system' ? palette.light.surface : p.border }]} /><View style={[styles.previewAccent, { backgroundColor: previewInk }]} /></View><GText weight={active ? 700 : 600} style={{ color: active ? p.primaryText : p.muted, fontSize: 11 }}>{label}</GText></PressableScale>;
 }
 
 function SettingsGroup({ p, title, children }: { p: Palette; title: string; children: React.ReactNode }) {
@@ -1672,7 +2011,8 @@ function SettingsGroup({ p, title, children }: { p: Palette; title: string; chil
 }
 
 function SettingsLink({ p, label, value, onPress }: { p: Palette; label: string; value: string; onPress?: () => void }) {
-  return <Pressable disabled={!onPress} onPress={onPress} style={[styles.settingRow, { borderBottomColor: p.border }]}><GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 12.5 }}>{label}</GText><GText numberOfLines={1} weight={700} style={{ color: p.primaryText, fontSize: 11.5 }}>{value}</GText>{onPress ? <GText style={{ color: p.dim, fontSize: 22 }}>›</GText> : null}</Pressable>;
+  const valueText = (text: string) => <GText numberOfLines={1} weight={700} style={{ color: p.primaryText, fontSize: 11.5 }}>{text}</GText>;
+  return <HighlightPressable highlight={p.sunken} disabled={!onPress} onPress={onPress} style={[styles.settingRow, { borderBottomColor: p.border }]}><GText weight={600} style={{ color: p.ink, flex: 1, fontSize: 12.5 }}>{label}</GText><Swap value={value} render={valueText} align="right" style={{ flexShrink: 1 }} />{onPress ? <GText style={{ color: p.dim, fontSize: 22 }}>›</GText> : null}</HighlightPressable>;
 }
 
 function SettingsInput({ p, label, value, onSave, ...props }: TextInputProps & { p: Palette; label: string; value: string; onSave: (value: string) => void }) {
@@ -1691,12 +2031,11 @@ const styles = StyleSheet.create({
   fieldInput: { fontFamily: 'JakartaSemiBold', fontSize: 15, paddingVertical: 4, marginTop: 2 },
   welcomeBody: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 34 },
   questMarkWrap: { width: 180, height: 180, alignItems: 'center', justifyContent: 'center' },
-  questHalo: { position: 'absolute', width: 136, height: 136, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 999 },
   questMark: { width: 96, height: 96, borderRadius: 32, alignItems: 'center', justifyContent: 'center', shadowColor: '#8E6EF0', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.42, shadowRadius: 22 },
   star: { fontSize: 54, lineHeight: 62 },
-  heroBadge: { position: 'absolute', width: 38, height: 38, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  heroBadgeTop: { top: 8, right: 12 },
-  heroBadgeBottom: { bottom: 13, left: 5 },
+  heroBadge: { width: 38, height: 38, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  heroBadgeTop: { position: 'absolute', top: 8, right: 12 },
+  heroBadgeBottom: { position: 'absolute', bottom: 13, left: 5 },
   centeredCopy: { alignItems: 'center' },
   display: { fontSize: 31, lineHeight: 36, letterSpacing: -0.9, textAlign: 'center' },
   heroDescription: { maxWidth: 310, fontSize: 14.5, lineHeight: 23, textAlign: 'center', marginTop: 16 },
@@ -1738,25 +2077,20 @@ const styles = StyleSheet.create({
   landmark: { position: 'absolute', alignItems: 'center', gap: 6 },
   landmarkDiamond: { borderWidth: 2, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '45deg' }] },
   landmarkLabel: { fontSize: 9.5, letterSpacing: 0.6 },
-  nextStepCard: { position: 'absolute', left: GUTTER, right: GUTTER, borderRadius: 24, borderWidth: 1.5, padding: 16, boxShadow: '0 14px 34px rgba(0,0,0,0.45)' },
+  nextStepCard: { borderRadius: 24, borderWidth: 1.5, padding: 16, boxShadow: '0 14px 34px rgba(0,0,0,0.45)' },
   nextStepTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   playButton: { width: 53, height: 53, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   upNext: { alignSelf: 'flex-start', fontSize: 9, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3, letterSpacing: 0.6 },
   stepMeta: { flexDirection: 'row', gap: 14, paddingVertical: 11, marginVertical: 12, borderTopWidth: 1, borderBottomWidth: 1 },
   sessionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: 15 },
   sessionBody: { paddingHorizontal: GUTTER, gap: 14 },
-  timerCard: { padding: 21, borderRadius: 22, alignItems: 'center', gap: 14 },
-  answerCard: { padding: 15, borderRadius: 17, flexDirection: 'row', alignItems: 'center', gap: 13 },
-  answerNumber: { width: 27, height: 27, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   completeBody: { flex: 1, justifyContent: 'center', paddingHorizontal: GUTTER, gap: 20 },
-  completeCheck: { width: 122, height: 122, borderRadius: 999, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', shadowColor: '#74C79C', shadowOpacity: 0.32, shadowRadius: 24 },
   completeStats: { flexDirection: 'row', gap: 9 },
-  completeStat: { flex: 1, alignItems: 'center', paddingVertical: 18, borderRadius: 18 },
+  completeStat: { flexGrow: 1, alignItems: 'center', paddingVertical: 18, borderRadius: 18 },
   streakSecured: { flexDirection: 'row', justifyContent: 'center', gap: 7 },
   streakBackdrop: { flex: 1, paddingHorizontal: GUTTER, paddingTop: 10, gap: 12 },
   skeletonLarge: { height: 145, borderRadius: 25 },
   skeletonSmall: { height: 58, borderRadius: 20 },
-  sheetRoot: { flex: 1, justifyContent: 'flex-end' },
   createSheet: { borderTopWidth: 1, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 22, paddingBottom: 28 },
   sheetHandle: { width: 46, height: 5, borderRadius: 999, alignSelf: 'center', marginTop: -10, marginBottom: 18 },
   aiCreateCard: { borderWidth: 1.5, borderRadius: 22, padding: 16 },
@@ -1775,7 +2109,6 @@ const styles = StyleSheet.create({
   formGrid: { flexDirection: 'row', gap: 10 },
   smallField: { flex: 1, padding: 13, borderRadius: 16 },
   levelPicker: { padding: 12, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  levelChoice: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
   generatingBody: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30, gap: 29 },
   generatingMarkWrap: { width: 142, height: 142, alignItems: 'center', justifyContent: 'center' },
   spinnerRing: { position: 'absolute', width: 116, height: 116, borderRadius: 999, borderWidth: 2 },

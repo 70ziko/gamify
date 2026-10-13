@@ -43,6 +43,6 @@ export async function send<T>(path: string, method: string, body?: unknown): Pro
   return result;
 }
 
-export function useApi<T>(path: string | null) {
-  return useQuery({ queryKey: [path], queryFn: () => api<T>(path!), enabled: path !== null });
+export function useApi<T>(path: string | null, refetchInterval?: number) {
+  return useQuery({ queryKey: [path], queryFn: () => api<T>(path!), enabled: path !== null, refetchInterval });
 }

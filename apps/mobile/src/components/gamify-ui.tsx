@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { type AndroidSymbol, type SFSymbol, SymbolView } from 'expo-symbols';
-import type { PropsWithChildren, ReactNode } from 'react';
+import { type ComponentProps, type ComponentType, type PropsWithChildren, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -14,8 +14,24 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import Animated, {
+  type CSSAnimationKeyframes,
+  type CSSTransitionProperties,
+  FadeIn,
+  FadeOut,
+  Keyframe,
+  LayoutAnimationConfig,
+  LinearTransition,
+  ReduceMotion,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
+
+import { cssEase, duration, ease, haptic, PressableScale, spring } from '@/components/motion';
 
 export type ThemeMode = 'dark' | 'light';
 
@@ -164,10 +180,11 @@ export function Card({
   ];
 
   if (onPress) {
+    // Big surfaces sink less than buttons.
     return (
-      <Pressable onPress={onPress} style={({ pressed }) => [cardStyle, pressed && styles.pressed]}>
+      <PressableScale scale={0.98} onPress={onPress} style={cardStyle}>
         {children}
-      </Pressable>
+      </PressableScale>
     );
   }
   return <View style={cardStyle}>{children}</View>;
@@ -185,6 +202,21 @@ export function GradientCard({
   );
 }
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+// Enabled ↔ disabled and on ↔ off cross-fade instead of snapping.
+const fadeTransition: CSSTransitionProperties<ViewStyle> = {
+  transitionProperty: ['opacity', 'backgroundColor'],
+  transitionDuration: duration.state,
+  transitionTimingFunction: cssEase.out,
+};
+
+const pressTransition: CSSTransitionProperties<ViewStyle> = {
+  transitionProperty: ['transform', 'opacity'],
+  transitionDuration: duration.press,
+  transitionTimingFunction: cssEase.out,
+};
+
 export function PrimaryButton({
   label,
   onPress,
@@ -192,6 +224,7 @@ export function PrimaryButton({
   icon,
   compact = false,
   disabled = false,
+  tapHaptic = true,
   style,
 }: {
   label: string;
@@ -200,65 +233,111 @@ export function PrimaryButton({
   icon?: IconName;
   compact?: boolean;
   disabled?: boolean;
+  // Off when the action fires its own haptic (checking an answer buzzes success or error), so one press gives one.
+  tapHaptic?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
+  const [pressed, setPressed] = useState(false);
+  const reduced = useReducedMotion();
+  // A physical key: the face sinks onto its darker lip under the finger and springs back up on release.
+  const face: ViewStyle = reduced ? { opacity: pressed ? 0.85 : 1 } : { transform: [{ translateY: pressed ? 4 : 0 }] };
   return (
-    <Pressable disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.buttonShadow, { backgroundColor: p.accentShadow }, style, pressed && styles.pressed, disabled && styles.disabled]}>
-      <LinearGradient
-        colors={[p.accent, p.accentDeep]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.primaryButton, compact && styles.compactButton, icon && styles.iconButton]}>
-        {icon ? <Icon name={icon} color={palette.dark.bg} size={compact ? 15 : 17} /> : null}
-        <GText weight={800} style={[styles.buttonText, { color: palette.dark.bg }]}>
-          {label}
-        </GText>
-      </LinearGradient>
-    </Pressable>
+    <AnimatedPressable
+      disabled={disabled}
+      pressRetentionOffset={16}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={() => {
+        if (tapHaptic) haptic.light();
+        onPress();
+      }}
+      style={[styles.buttonShadow, style, { opacity: disabled ? 0.45 : 1 }, fadeTransition]}>
+      {/* The lip sits behind the face rather than painting the whole button, so a sunk face shows no rim above it. */}
+      <View style={[styles.buttonLip, { backgroundColor: p.accentShadow }]} />
+      <Animated.View
+        style={[
+          face,
+          { transitionProperty: ['transform', 'opacity'], transitionDuration: pressed ? 100 : 140, transitionTimingFunction: cssEase.out },
+        ]}>
+        <LinearGradient
+          colors={[p.accent, p.accentDeep]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.primaryButton, compact && styles.compactButton, icon && styles.iconButton]}>
+          {icon ? <Icon name={icon} color={palette.dark.bg} size={compact ? 15 : 17} /> : null}
+          <GText weight={800} style={[styles.buttonText, { color: palette.dark.bg }]}>
+            {label}
+          </GText>
+        </LinearGradient>
+      </Animated.View>
+    </AnimatedPressable>
   );
 }
 
 export function BackButton({ p, onPress }: { p: Palette; onPress: () => void }) {
   return (
-    <Pressable
+    <PressableScale
+      scale={0.94}
       accessibilityLabel="Go back"
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.backButton,
-        { backgroundColor: p.surface, borderColor: p.border },
-        pressed && styles.pressed,
-      ]}>
+      style={[styles.backButton, { backgroundColor: p.surface, borderColor: p.border }]}>
       <GText weight={500} style={{ color: p.muted, fontSize: 32, lineHeight: 31 }}>
         ‹
       </GText>
-    </Pressable>
+    </PressableScale>
   );
 }
 
+// `initial` is where the fill starts on mount (percent, defaults to `value`), so a screen can show progress made
+// elsewhere filling in. `delay` holds that fill back (ms) to sequence it after other motion.
 export function ProgressBar({
   value,
   p,
   color,
   trackColor,
   height = 7,
+  initial,
+  delay = 0,
 }: {
   value: number;
   p: Palette;
   color?: string;
   trackColor?: string;
   height?: number;
+  initial?: number;
+  delay?: number;
 }) {
+  const reduced = useReducedMotion();
+  const target = clampPercent(value);
+  // Without `initial` the bar mounts at its value, so screens that remount on every navigation don't replay a fill.
+  const [from] = useState(() => (initial === undefined ? target : clampPercent(initial)));
+  const [filled, setFilled] = useState(from === target);
+  useEffect(() => {
+    if (filled || reduced) return;
+    // Waits for the first frame to commit at `from`; only this mount fill is delayed, later changes move at once.
+    const timer = setTimeout(() => setFilled(true), delay);
+    return () => clearTimeout(timer);
+  }, [filled, reduced, delay]);
+  const width = filled || reduced ? target : from;
   return (
     <View style={[styles.progressTrack, { backgroundColor: trackColor ?? p.sunken, height }]}>
-      <View
+      <Animated.View
         style={[
           styles.progressValue,
-          { backgroundColor: color ?? p.primary, width: `${Math.max(0, Math.min(100, value))}%` },
+          { backgroundColor: color ?? p.primary, width: `${width}%` },
+          reduced ? null : { transitionProperty: 'width', transitionDuration: duration.fill, transitionTimingFunction: cssEase.out },
         ]}
       />
     </View>
   );
 }
+
+function clampPercent(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+// Knob travel: track width 48, minus 4pt padding on each side, minus the 21pt knob.
+const TOGGLE_TRAVEL = 19;
 
 export function Toggle({
   on,
@@ -270,16 +349,43 @@ export function Toggle({
   onPress?: () => void;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.toggle,
-        { backgroundColor: on ? p.success : p.borderStrong, justifyContent: on ? 'flex-end' : 'flex-start' },
-      ]}>
-      <View style={[styles.toggleKnob, { backgroundColor: on ? palette.dark.bg : p.subtle }]} />
-    </Pressable>
+    <AnimatedPressable
+      onPress={onPress && (() => {
+        haptic.select();
+        onPress();
+      })}
+      style={[styles.toggle, { backgroundColor: on ? p.success : p.borderStrong }, fadeTransition]}>
+      <Animated.View
+        style={[
+          styles.toggleKnob,
+          { backgroundColor: on ? palette.dark.bg : p.subtle, transform: [{ translateX: on ? TOGGLE_TRAVEL : 0 }] },
+          {
+            transitionProperty: ['transform', 'backgroundColor'],
+            transitionDuration: [200, duration.state],
+            transitionTimingFunction: cssEase.out,
+          },
+        ]}
+      />
+    </AnimatedPressable>
   );
 }
+
+// The check pops in when a pill is picked and fades out when it's dropped. Checks already showing when a pill mounts
+// stay put, and leaving the screen doesn't play their exit (it would hold the old screen on top of the new one).
+const checkIn = new Keyframe({
+  0: { opacity: 0, transform: [{ scale: 0.6 }] },
+  100: { opacity: 1, transform: [{ scale: 1 }], easing: ease.out },
+}).duration(160);
+// Fades are what reduced motion keeps, so they opt out of the builders' default of skipping under it.
+const checkInReduced = FadeIn.duration(160).reduceMotion(ReduceMotion.Never);
+const checkOut = FadeOut.duration(130).reduceMotion(ReduceMotion.Never);
+// A pill grows and shrinks with its check, so its neighbours in a wrapping row glide instead of jumping.
+const pillLayout = LinearTransition.duration(180).easing(ease.inOut);
+
+// PressableScale hands extra props to its Animated.Pressable, which takes a layout transition.
+const LayoutPressableScale = PressableScale as ComponentType<
+  ComponentProps<typeof PressableScale> & { layout?: typeof pillLayout }
+>;
 
 export function Pill({
   label,
@@ -296,27 +402,35 @@ export function Pill({
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
+  const reduced = useReducedMotion();
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
+    <LayoutPressableScale
+      scale={0.96}
+      disabled={!onPress}
+      layout={reduced ? undefined : pillLayout}
+      onPress={onPress && (() => {
+        haptic.select();
+        onPress();
+      })}
+      style={[
         styles.pill,
         {
           backgroundColor: selected ? `${p.primary}25` : p.surface,
           borderColor: selected ? p.primary : p.border,
         },
         style,
-        pressed && onPress ? styles.pressed : null,
       ]}>
       <GText weight={selected ? 700 : 600} style={{ color: selected ? p.primaryText : p.muted, fontSize: 13 }}>
         {label}
       </GText>
-      {selected && showCheck ? (
-        <GText weight={800} style={{ color: p.primaryText, fontSize: 13 }}>
-          ✓
-        </GText>
-      ) : null}
-    </Pressable>
+      <LayoutAnimationConfig skipEntering skipExiting>
+        {selected && showCheck ? (
+          <Animated.View entering={reduced ? checkInReduced : checkIn} exiting={checkOut}>
+            <Icon name="check" color={p.primaryText} size={14} />
+          </Animated.View>
+        ) : null}
+      </LayoutAnimationConfig>
+    </LayoutPressableScale>
   );
 }
 
@@ -377,59 +491,120 @@ export function BottomNav({
 }) {
   const insets = useSafeAreaInsets();
   const tabs: MainTab[] = ['home', 'explore', 'continue', 'league', 'profile'];
+  // Every screen mounts its own nav, so a tab switch shows up as a nav mounting with a different active tab.
+  const [switched] = useState(() => lastTab !== undefined && lastTab !== active);
+  useEffect(() => {
+    lastTab = active;
+  }, [active]);
   return (
     <View style={[styles.nav, { backgroundColor: p.chrome, borderTopColor: p.border, paddingBottom: Math.max(insets.bottom - 8, 12) }]}>
-      {tabs.map((tab) => {
-        const selected = active === tab;
-        if (tab === 'continue') {
-          return (
-            <Pressable
-              key={tab}
-              accessibilityRole="button"
-              accessibilityLabel="Continue your roadmap"
-              onPress={() => onSelect(tab)}
-              style={({ pressed }) => [styles.continueTab, pressed && styles.pressed]}>
-              <View style={[styles.continueGlow, { boxShadow: `0 8px 22px ${p.accentDeep}66` }]}>
-                <LinearGradient
-                  colors={[p.accent, p.accentDeep]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.continueOrb, { borderColor: p.chrome }]}>
-                  <Svg width={30} height={30} viewBox="0 0 24 24" fill="none">
-                    <Path
-                      d="M12 2.6L14.85 9.05L21.9 9.75L16.6 14.45L18.15 21.4L12 17.7L5.85 21.4L7.4 14.45L2.1 9.75L9.15 9.05Z"
-                      fill={palette.dark.bg}
-                      stroke={palette.dark.bg}
-                      strokeWidth={2.6}
-                      strokeLinejoin="round"
-                    />
-                  </Svg>
-                </LinearGradient>
-              </View>
-              <GText weight={700} style={[styles.tabLabel, { color: p.accentDeep }]}>
-                Continue
-              </GText>
-            </Pressable>
-          );
-        }
-        const color = selected ? p.primary : p.dim;
-        return (
-          <Pressable
-            key={tab}
-            accessibilityRole="tab"
-            accessibilityState={{ selected }}
-            onPress={() => onSelect(tab)}
-            style={({ pressed }) => [styles.tab, pressed && styles.pressed]}>
-            <View style={[styles.tabIconPill, selected && { backgroundColor: `${p.primary}1F` }]}>
-              <TabIcon tab={tab} color={color} active={selected} />
-            </View>
-            <GText weight={700} style={[styles.tabLabel, { color }]}>
-              {tabLabels[tab]}
-            </GText>
-          </Pressable>
-        );
-      })}
+      {tabs.map((tab) =>
+        tab === 'continue' ? (
+          <ContinueTab key={tab} p={p} onPress={() => onSelect(tab)} />
+        ) : (
+          <SideTabButton key={tab} tab={tab} p={p} selected={active === tab} pop={switched && active === tab} onPress={() => onSelect(tab)} />
+        ),
+      )}
     </View>
+  );
+}
+
+// The tab the last mounted nav showed, for telling a tab switch from a return to the same tab.
+let lastTab: MainTab | undefined;
+
+// Tab switches don't slide anything: the newly active pill pops in place and its tint fades in.
+const tabPop: CSSAnimationKeyframes<ViewStyle> = { from: { transform: [{ scale: 0.88 }] }, to: { transform: [{ scale: 1 }] } };
+const tabTintIn: CSSAnimationKeyframes<ViewStyle> = { from: { opacity: 0 }, to: { opacity: 1 } };
+
+function SideTabButton({ tab, p, selected, pop, onPress }: { tab: SideTab; p: Palette; selected: boolean; pop: boolean; onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
+  const reduced = useReducedMotion();
+  const color = selected ? p.primary : p.dim;
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected }}
+      pressRetentionOffset={16}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={onPress}
+      style={styles.tab}>
+      <Animated.View style={[reduced ? { opacity: pressed ? 0.8 : 1 } : { transform: [{ scale: pressed ? 0.9 : 1 }] }, pressTransition]}>
+        <Animated.View
+          style={[styles.tabIconPill, pop && !reduced && { animationName: tabPop, animationDuration: 200, animationTimingFunction: cssEase.out }]}>
+          {selected ? (
+            <Animated.View
+              style={[
+                styles.tabTint,
+                { backgroundColor: `${p.primary}1F` },
+                pop && { animationName: tabTintIn, animationDuration: 150, animationTimingFunction: cssEase.out },
+              ]}
+            />
+          ) : null}
+          <TabIcon tab={tab} color={color} active={selected} />
+        </Animated.View>
+      </Animated.View>
+      <GText weight={700} style={[styles.tabLabel, { color }]}>
+        {tabLabels[tab]}
+      </GText>
+    </Pressable>
+  );
+}
+
+// One point of the star per press: 72° lands it back on its own outline, and turns add up across presses.
+const STAR_TURN = 72;
+
+function ContinueTab({ p, onPress }: { p: Palette; onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
+  const reduced = useReducedMotion();
+  const turns = useRef(0);
+  const rotation = useSharedValue(0);
+  const starStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.get()}deg` }] }));
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Continue your roadmap"
+      pressRetentionOffset={16}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onPress={() => {
+        haptic.light();
+        if (!reduced) {
+          turns.current += 1;
+          rotation.set(withSpring(turns.current * STAR_TURN, spring.snap));
+        }
+        onPress();
+      }}
+      style={styles.continueTab}>
+      <Animated.View
+        style={[
+          styles.continueGlow,
+          { boxShadow: `0 8px 22px ${p.accentDeep}66` },
+          reduced ? { opacity: pressed ? 0.8 : 1 } : { transform: [{ scale: pressed ? 0.94 : 1 }] },
+          pressTransition,
+        ]}>
+        <LinearGradient
+          colors={[p.accent, p.accentDeep]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.continueOrb, { borderColor: p.chrome }]}>
+          <Animated.View style={[styles.star, starStyle]}>
+            <Svg width={30} height={30} viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M12 2.6L14.85 9.05L21.9 9.75L16.6 14.45L18.15 21.4L12 17.7L5.85 21.4L7.4 14.45L2.1 9.75L9.15 9.05Z"
+                fill={palette.dark.bg}
+                stroke={palette.dark.bg}
+                strokeWidth={2.6}
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </Animated.View>
+        </LinearGradient>
+      </Animated.View>
+      <GText weight={700} style={[styles.tabLabel, { color: p.accentDeep }]}>
+        Continue
+      </GText>
+    </Pressable>
   );
 }
 
@@ -561,12 +736,12 @@ export function SectionTitle({
 // The one style for actions on the right of a section title ("See all", "Add roadmap").
 export function SectionLink({ p, label, icon, onPress }: { p: Palette; label: string; icon?: IconName; onPress?: () => void }) {
   return (
-    <Pressable accessibilityRole="button" hitSlop={8} onPress={onPress} style={({ pressed }) => [styles.sectionLink, pressed && styles.pressed]}>
+    <PressableScale scale={0.96} accessibilityRole="button" hitSlop={8} onPress={onPress} style={styles.sectionLink}>
       {icon ? <Icon name={icon} color={p.accentText} size={14} /> : null}
       <GText weight={700} style={{ color: p.accentText, fontSize: 12 }}>
         {label}
       </GText>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -619,16 +794,17 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     elevation: 2,
   },
-  pressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.99 }],
-  },
-  disabled: {
-    opacity: 0.45,
-  },
   buttonShadow: {
     borderRadius: 18,
     paddingBottom: 6,
+  },
+  buttonLip: {
+    position: 'absolute',
+    top: 6,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 18,
   },
   primaryButton: {
     minHeight: 56,
@@ -711,6 +887,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tabTint: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 999,
+  },
   tabLabel: {
     fontSize: 10,
     letterSpacing: 0.1,
@@ -731,6 +911,10 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // The star's centre sits at (12, 13.03) of its 24-unit viewBox, so it turns about that point, not the view's centre.
+  star: {
+    transformOrigin: ['50%', '54.3%', 0],
   },
   mascot: {
     alignItems: 'center',
