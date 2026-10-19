@@ -13,11 +13,6 @@ IMG = {"type": "image", "src": "https://cdn.example.com/c-major.png", "alt": "Fr
 
 # One authored example per kind, as JSON would arrive from the editor or an AI flow.
 EXAMPLES: dict[str, dict] = {
-    "learn": {
-        "prompt": "How to hold a C major chord",
-        "body": "Ring finger on the **3rd fret** of the A string.",
-        "media": [{"type": "video", "src": "asset:4f1c", "alt": "Hand forming C major", "start_s": 12, "end_s": 20}],
-    },
     "choice": {
         "prompt": "Which photo shows the C major chord?",
         "options": [
@@ -81,7 +76,14 @@ EXAMPLES: dict[str, dict] = {
         "rubric": "Returns a new reversed list without mutating xs.",
     },
     "speak": {"prompt": "Say this sentence", "text": "Buenos días, señora", "lang": "es-ES"},
-    "play": {"prompt": "Play a C major chord", "instrument": "guitar", "target": "chord", "chord": ["C", "E", "G"]},
+    # New material comes attached to an action: watch the clip, then play what it shows.
+    "play": {
+        "prompt": "Play the C major chord",
+        "media": [{"type": "video", "src": "asset:4f1c", "alt": "Hand forming C major", "start_s": 12, "end_s": 20}],
+        "instrument": "guitar",
+        "target": "chord",
+        "chord": ["C", "E", "G"],
+    },
     "tune": {"prompt": "Tune your low E string", "note": "E2", "label": "Low E"},
     "dialogue": {
         "prompt": "Order a coffee",
@@ -240,12 +242,6 @@ def test_speech_accuracy_threshold() -> None:
     assert check("speak", {"transcript": "buenos dias senora"}).passed  # spelling is the recognizer's job
     assert check("speak", {"transcript": "Buenos días, señora."}).passed
     assert not check("speak", {"transcript": "buenos"}).passed
-
-
-def test_learn_cards_need_content_and_always_pass() -> None:
-    assert check("learn", {}).passed
-    with pytest.raises(ValidationError, match="body or media"):
-        make("learn", body=" ", media=[])
 
 
 def test_dialogue_grades_each_learner_turn() -> None:

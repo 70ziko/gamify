@@ -58,7 +58,7 @@ Every completed step emits an XP event. Everything else composes on top.
   a `habit` (steps repeat daily). Steps hold `minutes`, `xp`, and `exercises`
   (JSONB: `quiz`, `check`, `timer`). The API computes XP from minutes
   (`app/progress/xp.py`), so neither clients nor AI pick XP. The richer question
-  model that will replace `exercises` (19 kinds across tap, keyboard, microphone,
+  model that will replace `exercises` (18 kinds across tap, keyboard, microphone,
   camera, and self-report) is designed in [docs/question-types.md](docs/question-types.md).
 - **`RoadmapDraft`** (`app/roadmaps/schemas.py`) is the one tree shape for manual
   creation, AI output, marketplace snapshots, and installs.

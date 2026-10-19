@@ -15,12 +15,11 @@ from pydantic import BaseModel, Field, computed_field, model_validator
 
 # What the learner answers with. Clients can skip or swap kinds whose input the device or moment can't provide.
 Input = Literal["tap", "keyboard", "microphone", "camera", "self"]
-# Expected cognitive demand, easiest first: take in something new, pick the right thing, produce it from memory,
-# produce it freely, do it in the real world.
-Demand = Literal["learn", "recognize", "recall", "produce", "perform"]
-# Who decides correctness: the answer key, an on-device recognizer feeding the answer key, an AI judge, the learner,
-# or nobody (nothing to answer).
-Grading = Literal["auto", "sensor", "ai", "self", "none"]
+# Expected cognitive demand, easiest first: pick the right thing, produce it from memory, produce it freely,
+# do it in the real world.
+Demand = Literal["recognize", "recall", "produce", "perform"]
+# Who decides correctness: the answer key, an on-device recognizer feeding the answer key, an AI judge, or the learner.
+Grading = Literal["auto", "sensor", "ai", "self"]
 Difficulty = Literal["easy", "normal", "hard"]
 Review = Literal["ai", "self"]
 
@@ -116,7 +115,9 @@ class QuestionBase(BaseModel):
 
     id: str = Field(default_factory=lambda: uuid4().hex[:12], pattern=r"^[A-Za-z0-9_-]{1,36}$")
     prompt: str = Field(min_length=1, max_length=300)  # the instruction, e.g. "Complete the sentence"
-    media: list[Media] = Field(default_factory=list, max_length=4)  # the stimulus: an image, a clip, a sentence to hear
+    # The stimulus and any teaching content: an image, a clip of how to hold a chord, a sentence to hear. There are
+    # no content-only cards; new material always comes attached to something the learner has to do.
+    media: list[Media] = Field(default_factory=list, max_length=4)
     hints: list[str] = Field(default_factory=list, max_length=3)
     explanation: str = Field(default="", max_length=1000)  # shown after the answer is checked
     difficulty: Difficulty = "normal"  # within the kind's demand; lets a session pick harder items as the learner improves
@@ -129,23 +130,6 @@ class QuestionBase(BaseModel):
 def unique(ids: list[str], what: str) -> None:
     if len(set(ids)) != len(ids):
         raise ValueError(f"{what} ids must be unique")
-
-
-# Learn: content to take in before being asked about it.
-
-
-class LearnQuestion(QuestionBase):
-    """Show something new: a short text, a clip of how to hold a chord, a word with its audio. Nothing to answer."""
-
-    spec = KindSpec("tap", "learn", "none")
-    kind: Literal["learn"]
-    body: str = Field(default="", max_length=2000)  # Markdown
-
-    @model_validator(mode="after")
-    def has_content(self) -> Self:
-        if not self.body.strip() and not self.media:
-            raise ValueError("a learn card needs a body or media")
-        return self
 
 
 # Tap: closed questions answered in a second or two.
@@ -578,8 +562,7 @@ class TimerQuestion(QuestionBase):
 
 
 Question = Annotated[
-    LearnQuestion
-    | ChoiceQuestion
+    ChoiceQuestion
     | MatchQuestion
     | OrderQuestion
     | CategorizeQuestion

@@ -53,10 +53,6 @@ class Point(BaseModel):
     y: float = Field(ge=0, le=1)
 
 
-class LearnResponse(BaseModel):
-    kind: Literal["learn"]
-
-
 class ChoiceResponse(BaseModel):
     kind: Literal["choice"]
     selected: list[str]
@@ -149,8 +145,7 @@ class TimerResponse(BaseModel):
 
 
 Response = Annotated[
-    LearnResponse
-    | ChoiceResponse
+    ChoiceResponse
     | MatchResponse
     | OrderResponse
     | CategorizeResponse
@@ -324,10 +319,6 @@ def pending(_q: Any, _r: Any) -> Grade:
     return Grade(outcome="pending", score=0)
 
 
-def grade_learn(_q: Any, _r: Any) -> Grade:
-    return binary(True)
-
-
 def grade_check(_q: Any, r: CheckResponse) -> Grade:
     return binary(r.done)
 
@@ -337,7 +328,6 @@ def grade_timer(q: TimerQuestion, r: TimerResponse) -> Grade:
 
 
 GRADERS: dict[str, Callable[[Any, Any], Grade]] = {
-    "learn": grade_learn,
     "choice": grade_choice,
     "match": grade_match,
     "order": grade_order,

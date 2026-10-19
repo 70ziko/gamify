@@ -28,14 +28,13 @@ Each kind also has a `spec` that is not serialized. It is fixed per kind, so nei
 | Axis | Values | Used for |
 |---|---|---|
 | `input` | tap · keyboard · microphone · camera · self | Skip or swap questions the device or the moment can't support |
-| `demand` | learn → recognize → recall → produce → perform | Easier kinds early in a unit, harder ones later |
-| `grading` | auto · sensor · ai · self · none | Where the verdict comes from |
+| `demand` | recognize → recall → produce → perform | Easier kinds early in a unit, harder ones later |
+| `grading` | auto · sensor · ai · self | Where the verdict comes from |
 
-## The 19 kinds
+## The 18 kinds
 
 | Input | Kind | Demand | Example | Answer key |
 |---|---|---|---|---|
-| tap | `learn` | learn | How to hold a C chord (video clip + text) | none: `body` and/or `media`, then Continue |
 | tap | `choice` | recognize | Which photo shows C major? | `correct: [option ids]`, `multiple` |
 | tap | `match` | recognize | Tap the pairs: gato ↔ cat | `pairs[{left, right}]` |
 | tap | `order` | recognize | Build "Yo bebo café" from tiles | `items` in order, `alternatives`, `distractors` |
@@ -62,30 +61,35 @@ are for the subjects that need them.
 
 ## Design rules
 
-1. **Placeholders are `{{id}}` tokens that point at a declared blank.** Each declared blank must appear exactly
+1. **No passive content.** There are no content-only cards. Teaching material (a clip of how to hold the C chord,
+   a new word with its audio) goes in a question's `media`, and the question asks the learner to act on it right
+   away: "Play the C major chord" with the clip attached and the microphone listening. Every screen is interactive.
+   To introduce something gently, pair it with an easy kind (`choice`, `match`) or `difficulty: easy`. Decided
+   2026-10-17, after a separate `learn` kind was tried and dropped.
+2. **Placeholders are `{{id}}` tokens that point at a declared blank.** Each declared blank must appear exactly
    once. A `{{name}}` that names no blank stays literal, so code and templates in the text need no escaping.
    `Cloze.segments()` splits the text into strings and `{"blank": id}` markers for renderers.
    - Why not put answers inline like H5P's `*6/six*`? That syntax gives `/`, `*` and `:` special meaning, and its
      users can't type fractions or phonetic slashes (see [H5P](#h5p)). Khan Academy's Perseus uses the same
      approach as ours: a placeholder in the text plus a map of widgets keyed by id (see [Perseus](#khan-academy-perseus)).
-2. **Answers use ids, not indexes.** Options, tiles, pairs and regions have stable `id`s, so shuffling and editing
+3. **Answers use ids, not indexes.** Options, tiles, pairs and regions have stable `id`s, so shuffling and editing
    never break the answer key. The legacy `quiz.answer: int` is the exception and should be migrated.
-3. **Media is referenced, never embedded.** `src` is `https://…` or `asset:<id>`. Images and videos require `alt`,
+4. **Media is referenced, never embedded.** `src` is `https://…` or `asset:<id>`. Images and videos require `alt`,
    because the AI author can't see them and screen readers need it. `speech` media is text the device reads aloud,
    so AI-written language courses get audio without recorded files. Video takes `start_s`/`end_s`/`loop` to show a
    clip, for example how to hold a chord.
-4. **Sensors observe and the grader compares.** Microphone and camera kinds submit what the on-device recognizer
+5. **Sensors observe and the grader compares.** Microphone and camera kinds submit what the on-device recognizer
    saw (a transcript, detected notes, a cents offset, an uploaded photo), never raw audio. Grading stays a pure
    function of `(question, response)`, and recognizers can change without touching the stored content.
-5. **Typed answers are forgiving but honest.** `TextMatch` ignores case and punctuation by default and keeps
+6. **Typed answers are forgiving but honest.** `TextMatch` ignores case and punctuation by default and keeps
    accents. A missing accent, or up to `typos` edits on answers of 5+ characters (a swap of neighbouring letters
    counts as one edit), returns `almost`: it passes, with a nudge.
-6. **Partial credit is reported, not awarded.** `Grade.score` and `Grade.wrong` exist so the UI can highlight the
+7. **Partial credit is reported, not awarded.** `Grade.score` and `Grade.wrong` exist so the UI can highlight the
    wrong blanks or pairs. XP still comes only from `step_xp(minutes)`.
-7. **Dialogues are graded turn by turn.** Lines from other speakers are read aloud in the dialogue's `lang`. The
+8. **Dialogues are graded turn by turn.** Lines from other speakers are read aloud in the dialogue's `lang`. The
    learner's turns are `choose` (graded by the answer key) or `speak` (graded by transcript accuracy), and
    `Grade.wrong` names the turns that missed.
-8. **Judged kinds return `pending`.** `open_response`, `code` and `capture` wait for an AI judge or the learner's
+9. **Judged kinds return `pending`.** `open_response`, `code` and `capture` wait for an AI judge or the learner's
    self-assessment. `review` is authored per question, because AI judging costs quota.
 
 ## Adding a kind
