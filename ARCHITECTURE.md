@@ -57,7 +57,9 @@ Every completed step emits an XP event. Everything else composes on top.
 - **`roadmaps` → `units` → `steps`.** A roadmap is a `course` (one-off steps) or
   a `habit` (steps repeat daily). Steps hold `minutes`, `xp`, and `exercises`
   (JSONB: `quiz`, `check`, `timer`). The API computes XP from minutes
-  (`app/progress/xp.py`), so neither clients nor AI pick XP.
+  (`app/progress/xp.py`), so neither clients nor AI pick XP. The richer question
+  model that will replace `exercises` (19 kinds across tap, keyboard, microphone,
+  camera, and self-report) is designed in [docs/question-types.md](docs/question-types.md).
 - **`RoadmapDraft`** (`app/roadmaps/schemas.py`) is the one tree shape for manual
   creation, AI output, marketplace snapshots, and installs.
 - **`xp_events`** — the append-only ledger, written only by the API. Each row has

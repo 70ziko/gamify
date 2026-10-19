@@ -31,7 +31,7 @@ The app signs in with Supabase and loads everything from the API, so start the
 
 ```bash
 corepack enable   # once per machine
-pnpm install
+pnpm install      
 pnpm mobile       # Expo dev server
 ```
 
